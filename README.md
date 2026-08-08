@@ -12,7 +12,7 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/Dr-hydra/Arknights-Painter/releases/latest) 下载最新版。推荐使用 `ArknightsPainter-v1.0.0-win-x64.exe` 单文件版本；ADB 不包含在程序中，需要使用模拟器自带的 ADB 或另行安装 Android Platform Tools。
+前往 [GitHub Releases](https://github.com/Dr-hydra/Arknights-Painter/releases/latest) 下载最新版。推荐使用 `ArknightsPainter.App.exe` 单文件版本；ADB 不包含在程序中，需要使用模拟器自带的 ADB 或另行安装 Android Platform Tools。
 
 ## 功能
 
@@ -34,6 +34,8 @@
 3. 导入或拖入 PNG、JPEG、BMP、WebP 图片，设置构图、转换算法、背景和抖动。
 4. 点击“自动识别”；识别失败时使用“手动调整”。
 5. 检查预览后点击“开始绘制”。绘制过程中不要切换模拟器页面或改变窗口方向。
+
+完整的参数说明、校准步骤和故障排查请参阅[使用说明](docs/使用说明.md)。
 
 校准数据按设备序列号与截图分辨率保存在 `%LOCALAPPDATA%\ArknightsPainter\settings.json`。
 
