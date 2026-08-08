@@ -1,0 +1,372 @@
+<Window
+    x:Class="ArknightsPainter.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:ArknightsPainter.App"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Arknights Painter"
+    mc:Ignorable="d">
+
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="RootGrid" Loaded="RootGrid_Loaded">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid
+            Grid.Row="0"
+            Padding="16,0"
+            Background="Transparent">
+            <Grid
+                x:Name="AppTitleBar"
+                Margin="0,0,132,0"
+                Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <FontIcon
+                    FontSize="18"
+                    Glyph="&#xE790;"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock
+                    Grid.Column="1"
+                    Margin="10,0,0,0"
+                    VerticalAlignment="Center"
+                    FontSize="14"
+                    FontWeight="SemiBold"
+                    Text="Arknights Painter" />
+                <TextBlock
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="24×24" />
+            </Grid>
+            <Button
+                HorizontalAlignment="Right"
+                Margin="0,0,148,0"
+                Padding="8,4"
+                Click="OpenGitHub_Click"
+                ToolTipService.ToolTip="打开 GitHub 项目页面">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE8A7;" />
+                    <TextBlock Text="GitHub 项目" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <Grid
+            Grid.Row="1"
+            Padding="20,16,20,12"
+            ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="*" MinWidth="420" />
+                <ColumnDefinition Width="340" />
+            </Grid.ColumnDefinitions>
+
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="14">
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="图像" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="OpenImage_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE838;" />
+                                <TextBlock Text="打开图片" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="1"
+                            Width="40"
+                            AutomationProperties.Name="裁切图片"
+                            Click="CropImage_Click"
+                            IsEnabled="{Binding CanCrop}"
+                            ToolTipService.ToolTip="裁切图片">
+                            <FontIcon Glyph="&#xE7A8;" />
+                        </Button>
+                    </Grid>
+
+                    <Border
+                        Height="116"
+                        AllowDrop="True"
+                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        DragOver="ImportArea_DragOver"
+                        Drop="ImportArea_Drop">
+                        <StackPanel
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="6">
+                            <FontIcon FontSize="24" Glyph="&#xE898;" />
+                            <TextBlock Text="拖放图片到这里" />
+                            <TextBlock
+                                MaxWidth="250"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{Binding CurrentImageName}"
+                                TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Margin="0,8,0,0" Text="构图方式" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding FitOptions}"
+                        SelectedItem="{Binding SelectedFitOption, Mode=TwoWay}"
+                        SelectionChanged="ConversionOption_Changed" />
+
+                    <TextBlock Text="转换算法" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding PixelArtOptions}"
+                        SelectedItem="{Binding SelectedPixelArtOption, Mode=TwoWay}"
+                        SelectionChanged="ConversionOption_Changed"
+                        ToolTipService.ToolTip="拼豆均色适合照片，拼豆主色适合图标和已有像素画" />
+
+                    <TextBlock Text="留白颜色" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{Binding PaletteOptions}"
+                        SelectedItem="{Binding SelectedBackground, Mode=TwoWay}"
+                        SelectionChanged="ConversionOption_Changed">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border
+                                        Width="18"
+                                        Height="18"
+                                        Background="{Binding Brush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="2" />
+                                    <TextBlock VerticalAlignment="Center" Text="{Binding Label}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <TextBlock Text="抖动方式" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding DitherOptions}"
+                        SelectedItem="{Binding SelectedDitherOption, Mode=TwoWay}"
+                        SelectionChanged="ConversionOption_Changed" />
+
+                    <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="颜色统计" />
+                    <ItemsControl ItemsSource="{Binding ColorUsage}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border
+                                        Width="14"
+                                        Height="14"
+                                        Background="{Binding Brush}"
+                                        CornerRadius="2" />
+                                    <TextBlock Grid.Column="1" Margin="8,0" Text="{Binding Label}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Count}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="24×24 预览" />
+                    <TextBlock
+                        HorizontalAlignment="Right"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding PreviewSummary}" />
+                </Grid>
+                <Viewbox Grid.Row="1" Stretch="Uniform">
+                    <Border
+                        Width="576"
+                        Height="576"
+                        Background="White"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="2">
+                        <Grid>
+                            <Image x:Name="ArtworkPreview" Stretch="Fill" />
+                            <StackPanel
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="8"
+                                Visibility="{Binding EmptyPreviewVisibility}">
+                                <FontIcon FontSize="32" Foreground="#777777" Glyph="&#xEB9F;" />
+                                <TextBlock Foreground="#666666" Text="选择一张图片" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Viewbox>
+                <InfoBar
+                    Grid.Row="2"
+                    Margin="0,12,0,0"
+                    IsClosable="False"
+                    IsOpen="{Binding IsPaletteIncomplete}"
+                    Message="当前内置的是截图可见色板；连接模拟器后运行 PaletteCapture 可生成完整色板。"
+                    Severity="Warning"
+                    Title="色板待完整采集" />
+            </Grid>
+
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="14">
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="ADB 设备" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            HorizontalAlignment="Stretch"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{Binding Devices}"
+                            PlaceholderText="选择设备"
+                            SelectedItem="{Binding SelectedDevice, Mode=TwoWay}" />
+                        <Button Grid.Column="1" Click="RefreshDevices_Click" ToolTipService.ToolTip="刷新设备">
+                            <FontIcon Glyph="&#xE72C;" />
+                        </Button>
+                    </Grid>
+
+                    <TextBox Header="ADB 路径" Text="{Binding AdbPath, Mode=TwoWay}" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            Header="TCP 端点"
+                            PlaceholderText="127.0.0.1:16384"
+                            Text="{Binding Endpoint, Mode=TwoWay}" />
+                        <Button
+                            Grid.Column="1"
+                            Margin="0,24,0,0"
+                            Click="Connect_Click"
+                            Content="连接" />
+                    </Grid>
+
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="True"
+                        Message="{Binding DeviceStatus}"
+                        Severity="{Binding DeviceSeverity}" />
+
+                    <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="画面校准" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{Binding CalibrationStatus}"
+                        TextWrapping="Wrap" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button HorizontalAlignment="Stretch" Click="AutoCalibrate_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE73E;" />
+                                <TextBlock Text="自动识别" />
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="1" HorizontalAlignment="Stretch" Click="ManualCalibrate_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE7C8;" />
+                                <TextBlock Text="手动调整" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="绘制" />
+                    <ProgressBar
+                        Maximum="100"
+                        Minimum="0"
+                        Value="{Binding ProgressPercent}" />
+                    <Grid>
+                        <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+                        <TextBlock HorizontalAlignment="Right" Text="{Binding ProgressLabel}" />
+                    </Grid>
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        IsEnabled="{Binding CanStart}"
+                        Click="StartDrawing_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE768;" />
+                            <TextBlock Text="开始绘制" />
+                        </StackPanel>
+                    </Button>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            IsEnabled="{Binding CanPause}"
+                            Click="PauseDrawing_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE769;" />
+                                <TextBlock Text="{Binding PauseButtonLabel}" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            IsEnabled="{Binding CanCancel}"
+                            Click="CancelDrawing_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE711;" />
+                                <TextBlock Text="取消" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <Expander
+            Grid.Row="2"
+            Margin="20,0,20,12"
+            Header="运行日志"
+            IsExpanded="False">
+            <TextBox
+                MaxHeight="150"
+                FontFamily="Consolas"
+                IsReadOnly="True"
+                Text="{Binding LogText}"
+                TextWrapping="Wrap"
+                ScrollViewer.VerticalScrollBarVisibility="Auto" />
+        </Expander>
+    </Grid>
+</Window>
