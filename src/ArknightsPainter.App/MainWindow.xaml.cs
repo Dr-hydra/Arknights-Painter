@@ -1,4 +1,5 @@
 using ArknightsPainter.App.Dialogs;
+using ArknightsPainter.App.Services;
 using ArknightsPainter.App.ViewModels;
 using ArknightsPainter.Core.Models;
 using Microsoft.UI.Windowing;
@@ -9,7 +10,6 @@ using SkiaSharp;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
 using Windows.Storage;
-using Windows.Storage.Pickers;
 using Windows.Storage.Streams;
 using Windows.System;
 using WinRT.Interop;
@@ -47,21 +47,15 @@ public sealed partial class MainWindow : Window
         await ViewModel.InitializeAsync();
     }
 
-    private async void OpenImage_Click(object sender, RoutedEventArgs e)
-    {
-        var picker = new FileOpenPicker();
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-        picker.FileTypeFilter.Add(".png");
-        picker.FileTypeFilter.Add(".jpg");
-        picker.FileTypeFilter.Add(".jpeg");
-        picker.FileTypeFilter.Add(".bmp");
-        picker.FileTypeFilter.Add(".webp");
-        var file = await picker.PickSingleFileAsync();
-        if (file is not null)
+    private async void OpenImage_Click(object sender, RoutedEventArgs e) =>
+        await RunUiActionAsync(async () =>
         {
-            await RunUiActionAsync(() => ViewModel.LoadImageAsync(file.Path));
-        }
-    }
+            var path = NativeFilePicker.PickImagePath(WindowNative.GetWindowHandle(this));
+            if (path is not null)
+            {
+                await ViewModel.LoadImageAsync(path);
+            }
+        });
 
     private async void OpenGitHub_Click(object sender, RoutedEventArgs e)
     {
