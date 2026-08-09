@@ -11,6 +11,8 @@ public sealed class DrawExecutor(
     IPaletteVision paletteVision,
     IPaletteNavigator paletteNavigator) : IDrawExecutor
 {
+    private const int MinimumSwipeRunLength = 3;
+
     public async Task ExecuteAsync(
         string serial,
         CalibrationProfile profile,
@@ -54,13 +56,76 @@ public sealed class DrawExecutor(
                 Report(DrawStage.SelectingColor, $"选择颜料 {step.Color.Name}", step.Color.Index);
                 await paletteNavigator.SelectColorAsync(serial, profile, step.Color, cancellationToken);
 
-                foreach (var batch in step.Cells.Chunk(Math.Max(1, options.BatchSize)))
+                if (options.UseSwipeDrawing)
                 {
-                    await WaitForResumeAsync(step.Color.Index);
-                    var points = batch.Select(cell => profile.CanvasBounds.GridCenter(cell)).ToArray();
-                    await adb.TapBatchAsync(serial, points, options.EffectiveTapDelay, cancellationToken);
-                    completed += batch.Length;
-                    Report(DrawStage.Painting, $"正在绘制 {step.Color.Name}", step.Color.Index);
+                    var batchSize = Math.Max(1, options.BatchSize);
+                    var pendingTaps = new List<GridPoint>(batchSize);
+                    foreach (var run in CreateHorizontalRuns(step.Cells))
+                    {
+                        if (run.Length >= MinimumSwipeRunLength)
+                        {
+                            while (pendingTaps.Count > 0)
+                            {
+                                await WaitForResumeAsync(step.Color.Index);
+                                var count = Math.Min(batchSize, pendingTaps.Count);
+                                await PaintTapBatchAsync(serial, profile, pendingTaps, count, options, cancellationToken);
+                                completed += count;
+                                Report(DrawStage.Painting, $"正在点击绘制 {step.Color.Name}", step.Color.Index);
+                            }
+
+                            await WaitForResumeAsync(step.Color.Index);
+                            var from = profile.CanvasBounds.GridCenter(run[0]);
+                            var to = profile.CanvasBounds.GridCenter(run[^1]);
+                            var duration = Math.Clamp(
+                                (run.Length - 1) * Math.Max(1, options.SwipeCellDurationMilliseconds),
+                                80,
+                                2500);
+                            await adb.SwipeAsync(serial, from, to, duration, cancellationToken);
+                            if (options.EffectiveTapDelay > TimeSpan.Zero)
+                            {
+                                await Task.Delay(options.EffectiveTapDelay, cancellationToken);
+                            }
+
+                            completed += run.Length;
+                            Report(DrawStage.Painting, $"正在滑动绘制 {step.Color.Name}", step.Color.Index);
+                            continue;
+                        }
+
+                        pendingTaps.AddRange(run);
+                        while (pendingTaps.Count >= batchSize)
+                        {
+                            await WaitForResumeAsync(step.Color.Index);
+                            await PaintTapBatchAsync(
+                                serial,
+                                profile,
+                                pendingTaps,
+                                batchSize,
+                                options,
+                                cancellationToken);
+                            completed += batchSize;
+                            Report(DrawStage.Painting, $"正在点击绘制 {step.Color.Name}", step.Color.Index);
+                        }
+                    }
+
+                    while (pendingTaps.Count > 0)
+                    {
+                        await WaitForResumeAsync(step.Color.Index);
+                        var count = Math.Min(batchSize, pendingTaps.Count);
+                        await PaintTapBatchAsync(serial, profile, pendingTaps, count, options, cancellationToken);
+                        completed += count;
+                        Report(DrawStage.Painting, $"正在点击绘制 {step.Color.Name}", step.Color.Index);
+                    }
+                }
+                else
+                {
+                    foreach (var batch in step.Cells.Chunk(Math.Max(1, options.BatchSize)))
+                    {
+                        await WaitForResumeAsync(step.Color.Index);
+                        var points = batch.Select(cell => profile.CanvasBounds.GridCenter(cell)).ToArray();
+                        await adb.TapBatchAsync(serial, points, options.EffectiveTapDelay, cancellationToken);
+                        completed += batch.Length;
+                        Report(DrawStage.Painting, $"正在绘制 {step.Color.Name}", step.Color.Index);
+                    }
                 }
 
                 if (!options.SkipVisualValidation)
@@ -112,6 +177,50 @@ public sealed class DrawExecutor(
 
         void Report(DrawStage stage, string message, int? paletteIndex = null, int? count = null) =>
             progress?.Report(new DrawProgress(stage, count ?? completed, plan.TotalCells, message, paletteIndex));
+    }
+
+    private async Task PaintTapBatchAsync(
+        string serial,
+        CalibrationProfile profile,
+        List<GridPoint> pending,
+        int count,
+        DrawExecutionOptions options,
+        CancellationToken cancellationToken)
+    {
+        var points = pending
+            .Take(count)
+            .Select(cell => profile.CanvasBounds.GridCenter(cell))
+            .ToArray();
+        pending.RemoveRange(0, count);
+        await adb.TapBatchAsync(serial, points, options.EffectiveTapDelay, cancellationToken);
+    }
+
+    private static IReadOnlyList<GridPoint[]> CreateHorizontalRuns(IReadOnlyList<GridPoint> cells)
+    {
+        var ordered = cells.OrderBy(cell => cell.Row).ThenBy(cell => cell.Column).ToArray();
+        if (ordered.Length == 0)
+        {
+            return [];
+        }
+
+        var runs = new List<GridPoint[]>();
+        var current = new List<GridPoint> { ordered[0] };
+        for (var index = 1; index < ordered.Length; index++)
+        {
+            var previous = ordered[index - 1];
+            var cell = ordered[index];
+            if (cell.Row == previous.Row && cell.Column == previous.Column + 1)
+            {
+                current.Add(cell);
+                continue;
+            }
+
+            runs.Add(current.ToArray());
+            current = [cell];
+        }
+
+        runs.Add(current.ToArray());
+        return runs;
     }
 
     private async Task<List<GridPoint>> FindMissingCellsAsync(

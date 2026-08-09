@@ -15,6 +15,8 @@ public sealed class AppSettings
 
     public bool IgnoreVisualValidation { get; set; }
 
+    public bool ExperimentalSwipeDrawing { get; set; }
+
     public List<CalibrationProfile> Calibrations { get; set; } = [];
 }
 

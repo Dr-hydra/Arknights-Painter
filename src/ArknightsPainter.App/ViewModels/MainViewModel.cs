@@ -36,12 +36,16 @@ public sealed class MainViewModel : ObservableObject
     private PixelArtOption _selectedPixelArtOption;
     private DitherOption _selectedDitherOption;
     private PaletteOption _selectedBackground;
+    private double _brightness;
+    private double _contrast;
+    private double _saturation;
     private ConnectionModeOption _selectedConnectionMode;
     private DeviceOption? _selectedDevice;
     private string _adbPath;
     private string _endpoint;
     private string _desktopPid;
     private bool _ignoreVisualValidation;
+    private bool _experimentalSwipeDrawing;
     private string _deviceStatus = "正在查找 ADB…";
     private InfoBarSeverity _deviceSeverity = InfoBarSeverity.Informational;
     private string _calibrationStatus = "选择在线设备后进行校准。";
@@ -93,6 +97,7 @@ public sealed class MainViewModel : ObservableObject
         _endpoint = _settings.Endpoint;
         _desktopPid = _settings.DesktopPid;
         _ignoreVisualValidation = _settings.IgnoreVisualValidation;
+        _experimentalSwipeDrawing = _settings.ExperimentalSwipeDrawing;
         if (IsAdbMode)
         {
             TryCreateAdb();
@@ -138,6 +143,48 @@ public sealed class MainViewModel : ObservableObject
         get => _selectedBackground;
         set => SetProperty(ref _selectedBackground, value);
     }
+
+    public double Brightness
+    {
+        get => _brightness;
+        set
+        {
+            if (SetProperty(ref _brightness, Math.Clamp(value, -100, 100)))
+            {
+                OnPropertyChanged(nameof(BrightnessLabel));
+            }
+        }
+    }
+
+    public string BrightnessLabel => FormatAdjustment(Brightness);
+
+    public double Contrast
+    {
+        get => _contrast;
+        set
+        {
+            if (SetProperty(ref _contrast, Math.Clamp(value, -100, 100)))
+            {
+                OnPropertyChanged(nameof(ContrastLabel));
+            }
+        }
+    }
+
+    public string ContrastLabel => FormatAdjustment(Contrast);
+
+    public double Saturation
+    {
+        get => _saturation;
+        set
+        {
+            if (SetProperty(ref _saturation, Math.Clamp(value, -100, 100)))
+            {
+                OnPropertyChanged(nameof(SaturationLabel));
+            }
+        }
+    }
+
+    public string SaturationLabel => FormatAdjustment(Saturation);
 
     public ConnectionModeOption SelectedConnectionMode
     {
@@ -231,6 +278,19 @@ public sealed class MainViewModel : ObservableObject
     }
 
     public bool IgnoreVisualValidation => _ignoreVisualValidation;
+
+    public bool ExperimentalSwipeDrawing
+    {
+        get => _experimentalSwipeDrawing;
+        set
+        {
+            if (SetProperty(ref _experimentalSwipeDrawing, value))
+            {
+                _settings.ExperimentalSwipeDrawing = value;
+                _settingsStore.Save(_settings);
+            }
+        }
+    }
 
     public bool IsAdbMode => string.Equals(SelectedConnectionMode.Value, "adb", StringComparison.OrdinalIgnoreCase);
 
@@ -369,7 +429,10 @@ public sealed class MainViewModel : ObservableObject
                 SelectedBackground.Color.Color,
                 SelectedPixelArtOption.Value,
                 SelectedDitherOption.Value,
-                _currentCrop);
+                _currentCrop,
+                Brightness,
+                Contrast,
+                Saturation);
             _artwork = await _quantizer.ConvertAsync(_currentImagePath, _palette, options, _conversionCts.Token);
             var preview = _quantizer.RenderPreview(_artwork, _palette);
             PreviewChanged?.Invoke(this, preview);
@@ -382,6 +445,13 @@ public sealed class MainViewModel : ObservableObject
         catch (OperationCanceledException)
         {
         }
+    }
+
+    public void ResetImageAdjustments()
+    {
+        Brightness = 0;
+        Contrast = 0;
+        Saturation = 0;
     }
 
     public async Task RefreshDevicesAsync()
@@ -550,9 +620,15 @@ public sealed class MainViewModel : ObservableObject
         }
 
         var ignoreVisualValidation = IgnoreVisualValidation;
+        var useSwipeDrawing = ExperimentalSwipeDrawing;
         if (ignoreVisualValidation)
         {
             AppendLog("警告：已启用强制绘制，将忽略画布、色板、选色发光和落色结果校验。");
+        }
+
+        if (useSwipeDrawing)
+        {
+            AppendLog("已启用实验性滑动绘制：连续至少 3 个同色格将按行合并滑动。");
         }
 
         var navigator = new PaletteNavigator(_adb!, _paletteVision, ignoreVisualValidation);
@@ -565,7 +641,9 @@ public sealed class MainViewModel : ObservableObject
                 profile,
                 _palette,
                 DrawPlan.Create(artwork, _palette),
-                new DrawExecutionOptions(SkipVisualValidation: ignoreVisualValidation),
+                new DrawExecutionOptions(
+                    SkipVisualValidation: ignoreVisualValidation,
+                    UseSwipeDrawing: useSwipeDrawing),
                 _pauseController,
                 progress,
                 _drawingCts.Token);
@@ -743,6 +821,13 @@ public sealed class MainViewModel : ObservableObject
     private static bool IsFullCrop(ImageCropRect crop) =>
         Math.Abs(crop.X) < 0.000001 && Math.Abs(crop.Y) < 0.000001 &&
         Math.Abs(crop.Width - 1) < 0.000001 && Math.Abs(crop.Height - 1) < 0.000001;
+
+    private static string FormatAdjustment(double value) => value switch
+    {
+        > 0 => $"+{value:0}",
+        < 0 => $"{value:0}",
+        _ => "0"
+    };
 
     private void AppendLog(string message)
     {

@@ -78,6 +78,7 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
     {
         using var source = SkiaImageLoader.LoadOriented(imagePath);
         using var sampled = Sample(source, options, cancellationToken);
+        ApplyColorAdjustments(sampled, options, cancellationToken);
         var indexes = options.Dither switch
         {
             DitherMode.None => QuantizeDirect(sampled, palette, cancellationToken),
@@ -312,6 +313,54 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         if (!crop.IsValid)
         {
             throw new ArgumentOutOfRangeException(nameof(options), "Image crop must stay inside normalized image bounds.");
+        }
+    }
+
+    private static void ApplyColorAdjustments(
+        SKBitmap bitmap,
+        ImageConversionOptions options,
+        CancellationToken cancellationToken)
+    {
+        ValidateAdjustment(options.Brightness, nameof(options.Brightness));
+        ValidateAdjustment(options.Contrast, nameof(options.Contrast));
+        ValidateAdjustment(options.Saturation, nameof(options.Saturation));
+        if (Math.Abs(options.Brightness) < 0.000001 &&
+            Math.Abs(options.Contrast) < 0.000001 &&
+            Math.Abs(options.Saturation) < 0.000001)
+        {
+            return;
+        }
+
+        var brightnessOffset = options.Brightness * 2.55;
+        var contrastFactor = Math.Pow(2, options.Contrast / 50.0);
+        var saturationFactor = 1 + (options.Saturation / 100.0);
+        for (var y = 0; y < bitmap.Height; y++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            for (var x = 0; x < bitmap.Width; x++)
+            {
+                var pixel = bitmap.GetPixel(x, y);
+                var red = ((pixel.Red - 127.5) * contrastFactor) + 127.5 + brightnessOffset;
+                var green = ((pixel.Green - 127.5) * contrastFactor) + 127.5 + brightnessOffset;
+                var blue = ((pixel.Blue - 127.5) * contrastFactor) + 127.5 + brightnessOffset;
+                var luminance = (red * 0.2126) + (green * 0.7152) + (blue * 0.0722);
+                red = luminance + ((red - luminance) * saturationFactor);
+                green = luminance + ((green - luminance) * saturationFactor);
+                blue = luminance + ((blue - luminance) * saturationFactor);
+                bitmap.SetPixel(x, y, new SKColor(
+                    ClampByte(red),
+                    ClampByte(green),
+                    ClampByte(blue),
+                    pixel.Alpha));
+            }
+        }
+    }
+
+    private static void ValidateAdjustment(double value, string name)
+    {
+        if (!double.IsFinite(value) || value is < -100 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(name, "Image adjustment must be between -100 and 100.");
         }
     }
 

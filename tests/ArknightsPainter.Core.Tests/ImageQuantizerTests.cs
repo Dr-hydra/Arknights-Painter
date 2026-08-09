@@ -222,6 +222,60 @@ public sealed class ImageQuantizerTests : IDisposable
         Assert.Contains("外部", exception.Message);
     }
 
+    [Fact]
+    public async Task BrightnessAdjustment_ChangesPaletteMapping()
+    {
+        var path = CreateSolidImage("brightness.png", 24, 24, new SKColor(80, 80, 80));
+        var palette = TestPalette.Create(new RgbColor(80, 80, 80), new RgbColor(208, 208, 208));
+        var quantizer = new SkiaImageQuantizer();
+        var options = new ImageConversionOptions(
+            ImageFitMode.Stretch,
+            new RgbColor(255, 255, 255),
+            PixelArtAlgorithm.BeadAverage,
+            DitherMode.None,
+            Brightness: 50);
+
+        var artwork = await quantizer.ConvertAsync(path, palette, options);
+
+        Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(1, index));
+    }
+
+    [Fact]
+    public async Task ContrastAdjustment_ChangesPaletteMapping()
+    {
+        var path = CreateSolidImage("contrast.png", 24, 24, new SKColor(160, 160, 160));
+        var palette = TestPalette.Create(new RgbColor(160, 160, 160), new RgbColor(255, 255, 255));
+        var quantizer = new SkiaImageQuantizer();
+        var options = new ImageConversionOptions(
+            ImageFitMode.Stretch,
+            new RgbColor(255, 255, 255),
+            PixelArtAlgorithm.BeadAverage,
+            DitherMode.None,
+            Contrast: 100);
+
+        var artwork = await quantizer.ConvertAsync(path, palette, options);
+
+        Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(1, index));
+    }
+
+    [Fact]
+    public async Task SaturationMinus100_ProducesGrayscale()
+    {
+        var path = CreateSolidImage("saturation.png", 24, 24, SKColors.Red);
+        var palette = TestPalette.Create(new RgbColor(255, 0, 0), new RgbColor(54, 54, 54));
+        var quantizer = new SkiaImageQuantizer();
+        var options = new ImageConversionOptions(
+            ImageFitMode.Stretch,
+            new RgbColor(255, 255, 255),
+            PixelArtAlgorithm.BeadAverage,
+            DitherMode.None,
+            Saturation: -100);
+
+        var artwork = await quantizer.ConvertAsync(path, palette, options);
+
+        Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(1, index));
+    }
+
     public void Dispose()
     {
         Directory.Delete(_temporaryDirectory, true);

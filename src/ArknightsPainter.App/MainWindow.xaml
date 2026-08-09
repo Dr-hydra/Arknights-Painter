@@ -183,6 +183,42 @@
                         SelectedItem="{Binding SelectedDitherOption, Mode=TwoWay}"
                         SelectionChanged="ConversionOption_Changed" />
 
+                    <TextBlock Margin="0,8,0,0" Style="{StaticResource SectionHeaderStyle}" Text="图像调整" />
+                    <Grid>
+                        <TextBlock Text="亮度" />
+                        <TextBlock HorizontalAlignment="Right" Text="{Binding BrightnessLabel}" />
+                    </Grid>
+                    <Slider
+                        Maximum="100"
+                        Minimum="-100"
+                        StepFrequency="1"
+                        Value="{Binding Brightness, Mode=TwoWay}"
+                        ValueChanged="ImageAdjustment_Changed" />
+                    <Grid>
+                        <TextBlock Text="对比度" />
+                        <TextBlock HorizontalAlignment="Right" Text="{Binding ContrastLabel}" />
+                    </Grid>
+                    <Slider
+                        Maximum="100"
+                        Minimum="-100"
+                        StepFrequency="1"
+                        Value="{Binding Contrast, Mode=TwoWay}"
+                        ValueChanged="ImageAdjustment_Changed" />
+                    <Grid>
+                        <TextBlock Text="饱和度" />
+                        <TextBlock HorizontalAlignment="Right" Text="{Binding SaturationLabel}" />
+                    </Grid>
+                    <Slider
+                        Maximum="100"
+                        Minimum="-100"
+                        StepFrequency="1"
+                        Value="{Binding Saturation, Mode=TwoWay}"
+                        ValueChanged="ImageAdjustment_Changed" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Click="ResetImageAdjustments_Click"
+                        Content="重置图像调整" />
+
                     <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="颜色统计" />
                     <ItemsControl ItemsSource="{Binding ColorUsage}">
@@ -382,6 +418,17 @@
                         Message="将跳过画布、色板、选色发光和落色结果校验；设备状态、校准坐标和颜料定位仍会保留。"
                         Severity="Warning"
                         Title="视觉校验已关闭" />
+                    <ToggleSwitch
+                        Header="实验性滑动绘制"
+                        IsOn="{Binding ExperimentalSwipeDrawing, Mode=TwoWay}"
+                        OffContent="已关闭：逐格点击"
+                        OnContent="已开启：连续同色格滑动" />
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="{Binding ExperimentalSwipeDrawing}"
+                        Message="同一行连续至少 3 个同色格会合并为直线滑动；孤立格仍逐格点击。建议同时开启绘制安全校验。"
+                        Severity="Warning"
+                        Title="实验功能" />
                     <ProgressBar
                         Maximum="100"
                         Minimum="0"

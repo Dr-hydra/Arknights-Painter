@@ -196,7 +196,10 @@ public sealed record ImageConversionOptions(
     RgbColor Background,
     PixelArtAlgorithm Algorithm,
     DitherMode Dither,
-    ImageCropRect? Crop = null)
+    ImageCropRect? Crop = null,
+    double Brightness = 0,
+    double Contrast = 0,
+    double Saturation = 0)
 {
     public static ImageConversionOptions Default { get; } =
         new(
@@ -286,7 +289,9 @@ public sealed record DrawExecutionOptions(
     int BatchSize = 20,
     TimeSpan? TapDelay = null,
     int VerificationRetries = 1,
-    bool SkipVisualValidation = false)
+    bool SkipVisualValidation = false,
+    bool UseSwipeDrawing = false,
+    int SwipeCellDurationMilliseconds = 50)
 {
     public TimeSpan EffectiveTapDelay => TapDelay ?? TimeSpan.FromMilliseconds(50);
 }

@@ -21,6 +21,7 @@ namespace ArknightsPainter.App;
 public sealed partial class MainWindow : Window
 {
     private bool _loaded;
+    private CancellationTokenSource? _adjustmentDebounceCts;
 
     public MainWindow()
     {
@@ -134,6 +135,43 @@ public sealed partial class MainWindow : Window
         {
             await RunUiActionAsync(ViewModel.ReconvertAsync);
         }
+    }
+
+    private async void ImageAdjustment_Changed(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (!_loaded)
+        {
+            return;
+        }
+
+        _adjustmentDebounceCts?.Cancel();
+        _adjustmentDebounceCts?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _adjustmentDebounceCts = cancellation;
+        try
+        {
+            await Task.Delay(160, cancellation.Token);
+            await RunUiActionAsync(ViewModel.ReconvertAsync);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_adjustmentDebounceCts, cancellation))
+            {
+                _adjustmentDebounceCts = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private async void ResetImageAdjustments_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ResetImageAdjustments();
+        _adjustmentDebounceCts?.Cancel();
+        await RunUiActionAsync(ViewModel.ReconvertAsync);
     }
 
     private async void RefreshDevices_Click(object sender, RoutedEventArgs e) =>
