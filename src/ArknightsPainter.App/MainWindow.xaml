@@ -241,7 +241,12 @@
 
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="14">
-                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="ADB 设备" />
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="连接设备" />
+                    <ComboBox
+                        DisplayMemberPath="Label"
+                        ItemsSource="{Binding ConnectionModeOptions}"
+                        SelectedItem="{Binding SelectedConnectionMode, Mode=TwoWay}"
+                        SelectionChanged="ConnectionMode_Changed" />
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -258,8 +263,11 @@
                         </Button>
                     </Grid>
 
-                    <TextBox Header="ADB 路径" Text="{Binding AdbPath, Mode=TwoWay}" />
-                    <Grid ColumnSpacing="8">
+                    <TextBox
+                        Header="ADB 路径"
+                        Text="{Binding AdbPath, Mode=TwoWay}"
+                        Visibility="{Binding AdbSettingsVisibility}" />
+                    <Grid ColumnSpacing="8" Visibility="{Binding AdbSettingsVisibility}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
@@ -273,6 +281,21 @@
                             Margin="0,24,0,0"
                             Click="Connect_Click"
                             Content="连接" />
+                    </Grid>
+                    <Grid ColumnSpacing="8" Visibility="{Binding DesktopSettingsVisibility}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            Header="电脑版进程 PID"
+                            PlaceholderText="留空自动查找，例如 25760"
+                            Text="{Binding DesktopPid, Mode=TwoWay}" />
+                        <Button
+                            Grid.Column="1"
+                            Margin="0,24,0,0"
+                            Click="Connect_Click"
+                            Content="绑定" />
                     </Grid>
 
                     <InfoBar

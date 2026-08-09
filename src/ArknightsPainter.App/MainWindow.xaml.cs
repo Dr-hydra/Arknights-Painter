@@ -128,6 +128,14 @@ public sealed partial class MainWindow : Window
     private async void Connect_Click(object sender, RoutedEventArgs e) =>
         await RunUiActionAsync(ViewModel.ConnectAsync);
 
+    private async void ConnectionMode_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loaded)
+        {
+            await RunUiActionAsync(ViewModel.ConnectionModeChangedAsync);
+        }
+    }
+
     private async void AutoCalibrate_Click(object sender, RoutedEventArgs e)
     {
         await RunUiActionAsync(async () =>

@@ -5,9 +5,13 @@ namespace ArknightsPainter.App.Services;
 
 public sealed class AppSettings
 {
+    public string ConnectionMode { get; set; } = "adb";
+
     public string? AdbPath { get; set; }
 
     public string Endpoint { get; set; } = "127.0.0.1:16384";
+
+    public string DesktopPid { get; set; } = string.Empty;
 
     public List<CalibrationProfile> Calibrations { get; set; } = [];
 }

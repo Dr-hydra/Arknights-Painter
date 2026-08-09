@@ -44,6 +44,11 @@ if ($SingleFile) {
         -o $output
 
     Get-ChildItem -LiteralPath $output -File -Filter '*.pdb' | Remove-Item -Force
+
+    $maaSource = Join-Path $repositoryRoot 'src\ArknightsPainter.App\Assets\Maa'
+    $maaOutput = Join-Path $output 'Assets\Maa'
+    New-Item -ItemType Directory -Path $maaOutput -Force | Out-Null
+    Copy-Item -Path (Join-Path $maaSource '*.dll') -Destination $maaOutput -Force
 } else {
     dotnet build $project -c $Configuration -p:Platform=x64
 

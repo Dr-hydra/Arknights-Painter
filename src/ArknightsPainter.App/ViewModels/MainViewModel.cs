@@ -7,6 +7,7 @@ using ArknightsPainter.Core.Automation;
 using ArknightsPainter.Core.Imaging;
 using ArknightsPainter.Core.Models;
 using ArknightsPainter.Core.Vision;
+using ArknightsPainter.Core.Win32;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
@@ -35,9 +36,11 @@ public sealed class MainViewModel : ObservableObject
     private PixelArtOption _selectedPixelArtOption;
     private DitherOption _selectedDitherOption;
     private PaletteOption _selectedBackground;
+    private ConnectionModeOption _selectedConnectionMode;
     private DeviceOption? _selectedDevice;
     private string _adbPath;
     private string _endpoint;
+    private string _desktopPid;
     private string _deviceStatus = "正在查找 ADB…";
     private InfoBarSeverity _deviceSeverity = InfoBarSeverity.Informational;
     private string _calibrationStatus = "选择在线设备后进行校准。";
@@ -77,9 +80,21 @@ public sealed class MainViewModel : ObservableObject
         PaletteOptions = new ObservableCollection<PaletteOption>(_palette.Colors.Select(PaletteOption.From));
         _selectedBackground = PaletteOptions.FirstOrDefault(option => option.Color.Index == 3)
             ?? PaletteOptions[0];
+        ConnectionModeOptions =
+        [
+            new ConnectionModeOption("adb", "Android 模拟器（ADB）"),
+            new ConnectionModeOption("win32", "电脑版窗口（PID）")
+        ];
+        _selectedConnectionMode = ConnectionModeOptions.FirstOrDefault(option =>
+            string.Equals(option.Value, _settings.ConnectionMode, StringComparison.OrdinalIgnoreCase))
+            ?? ConnectionModeOptions[0];
         _adbPath = AdbPathResolver.Find(_settings.AdbPath) ?? _settings.AdbPath ?? string.Empty;
         _endpoint = _settings.Endpoint;
-        TryCreateAdb();
+        _desktopPid = _settings.DesktopPid;
+        if (IsAdbMode)
+        {
+            TryCreateAdb();
+        }
     }
 
     public event EventHandler<byte[]>? PreviewChanged;
@@ -89,6 +104,8 @@ public sealed class MainViewModel : ObservableObject
     public IReadOnlyList<PixelArtOption> PixelArtOptions { get; }
 
     public IReadOnlyList<DitherOption> DitherOptions { get; }
+
+    public IReadOnlyList<ConnectionModeOption> ConnectionModeOptions { get; }
 
     public ObservableCollection<PaletteOption> PaletteOptions { get; }
 
@@ -118,6 +135,26 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _selectedBackground;
         set => SetProperty(ref _selectedBackground, value);
+    }
+
+    public ConnectionModeOption SelectedConnectionMode
+    {
+        get => _selectedConnectionMode;
+        set
+        {
+            if (SetProperty(ref _selectedConnectionMode, value))
+            {
+                _settings.ConnectionMode = value.Value;
+                _settingsStore.Save(_settings);
+                _adb = null;
+                Devices.Clear();
+                SelectedDevice = null;
+                UpdateConnectionModeVisibility();
+                UpdateDeviceStatus();
+                UpdateCalibrationStatus();
+                OnPropertyChanged(nameof(CanStart));
+            }
+        }
     }
 
     public DeviceOption? SelectedDevice
@@ -160,6 +197,25 @@ public sealed class MainViewModel : ObservableObject
             }
         }
     }
+
+    public string DesktopPid
+    {
+        get => _desktopPid;
+        set
+        {
+            if (SetProperty(ref _desktopPid, value))
+            {
+                _settings.DesktopPid = value;
+                _settingsStore.Save(_settings);
+            }
+        }
+    }
+
+    public bool IsAdbMode => string.Equals(SelectedConnectionMode.Value, "adb", StringComparison.OrdinalIgnoreCase);
+
+    public Visibility AdbSettingsVisibility => IsAdbMode ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility DesktopSettingsVisibility => IsAdbMode ? Visibility.Collapsed : Visibility.Visible;
 
     public string CurrentImageName
     {
@@ -242,6 +298,8 @@ public sealed class MainViewModel : ObservableObject
         await RefreshDevicesAsync();
     }
 
+    public Task ConnectionModeChangedAsync() => RefreshDevicesAsync();
+
     public async Task LoadImageAsync(string path)
     {
         _currentImagePath = path;
@@ -301,6 +359,50 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task RefreshDevicesAsync()
     {
+        if (!IsAdbMode)
+        {
+            try
+            {
+                var previous = SelectedDevice?.Device.Serial;
+                // Window discovery is deliberately independent from Maa
+                // controller creation. Connecting a controller can wait on
+                // the game window and must never block the startup UI thread.
+                var devices = await Task.Run(Win32DesktopClient.DiscoverDevices);
+
+                Devices.Clear();
+                foreach (var device in devices)
+                {
+                    Devices.Add(new DeviceOption(device));
+                }
+
+                SelectedDevice = Devices.FirstOrDefault(item => item.Device.Serial == previous)
+                    ?? Devices.FirstOrDefault();
+                if (SelectedDevice is not null &&
+                    Win32DesktopClient.TryParseProcessId(SelectedDevice.Device.Serial, out var processId))
+                {
+                    _desktopPid = processId.ToString();
+                    _settings.DesktopPid = _desktopPid;
+                    _settingsStore.Save(_settings);
+                    OnPropertyChanged(nameof(DesktopPid));
+                }
+
+                UpdateDeviceStatus();
+                AppendLog(devices.Count == 0
+                    ? "未自动找到明日方舟电脑版窗口，请确认游戏已启动。"
+                    : $"已自动找到 {devices.Count} 个电脑版窗口。");
+            }
+            catch (Exception ex)
+            {
+                Devices.Clear();
+                SelectedDevice = null;
+                DeviceStatus = ex.Message;
+                DeviceSeverity = InfoBarSeverity.Error;
+                AppendLog(ex.Message);
+            }
+
+            return;
+        }
+
         if (!TryCreateAdb())
         {
             DeviceStatus = "未找到 adb.exe，请填写路径。";
@@ -334,6 +436,23 @@ public sealed class MainViewModel : ObservableObject
 
     public async Task ConnectAsync()
     {
+        if (!IsAdbMode)
+        {
+            if (!await EnsureDesktopClientAsync())
+            {
+                await RefreshDevicesAsync();
+                if (!await EnsureDesktopClientAsync() || SelectedDevice is null)
+                {
+                    throw new InvalidOperationException("未找到明日方舟电脑版窗口，请先启动游戏。");
+                }
+            }
+
+            await _adb!.ConnectAsync($"pid:{DesktopPid}");
+            AppendLog($"已绑定电脑版窗口 PID {DesktopPid}。");
+            await RefreshDevicesAsync();
+            return;
+        }
+
         if (!TryCreateAdb())
         {
             throw new InvalidOperationException("请先设置有效的 adb.exe 路径。");
@@ -347,6 +466,16 @@ public sealed class MainViewModel : ObservableObject
     public async Task<CalibrationCapture> CaptureCalibrationAsync()
     {
         var device = RequireOnlineDevice();
+        if (!IsAdbMode && !await EnsureDesktopClientAsync())
+        {
+            throw new InvalidOperationException("未找到明日方舟电脑版窗口，请先刷新设备列表。");
+        }
+
+        if (_adb is null)
+        {
+            throw new InvalidOperationException("设备连接尚未建立，请先连接设备。");
+        }
+
         var screenshot = await _adb!.CaptureScreenshotAsync(device.Serial);
         var result = _locator.Locate(device.Serial, screenshot);
         return new CalibrationCapture(screenshot, result);
@@ -368,6 +497,16 @@ public sealed class MainViewModel : ObservableObject
         var device = RequireOnlineDevice();
         var profile = GetCalibration() ?? throw new InvalidOperationException("请先完成画面校准。");
         var artwork = _artwork ?? throw new InvalidOperationException("请先导入图片。");
+        if (!IsAdbMode && !await EnsureDesktopClientAsync())
+        {
+            throw new InvalidOperationException("未找到明日方舟电脑版窗口，请先刷新设备列表。");
+        }
+
+        if (_adb is null)
+        {
+            throw new InvalidOperationException("设备连接尚未建立，请先连接设备。");
+        }
+
         if (_isDrawing)
         {
             return;
@@ -452,6 +591,39 @@ public sealed class MainViewModel : ObservableObject
         return true;
     }
 
+    private bool TryCreateDesktop()
+    {
+        if (!Win32DesktopClient.TryParseProcessId(DesktopPid, out var pid))
+        {
+            _adb = null;
+            return false;
+        }
+
+        if (pid == Environment.ProcessId)
+        {
+            _adb = null;
+            return false;
+        }
+
+        if (_adb is not Win32DesktopClient desktop || desktop.ProcessId != pid)
+        {
+            try
+            {
+                _adb = new Win32DesktopClient(pid);
+            }
+            catch (Exception)
+            {
+                _adb = null;
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private Task<bool> EnsureDesktopClientAsync() =>
+        IsAdbMode ? Task.FromResult(TryCreateAdb()) : Task.Run(TryCreateDesktop);
+
     private AdbDevice RequireOnlineDevice() => SelectedDevice?.Device is { State: AdbDeviceState.Device } device
         ? device
         : throw new InvalidOperationException("请选择状态为 device 的在线模拟器。");
@@ -487,6 +659,13 @@ public sealed class MainViewModel : ObservableObject
         DeviceSeverity = SelectedDevice.Device.State == AdbDeviceState.Device
             ? InfoBarSeverity.Success
             : InfoBarSeverity.Warning;
+    }
+
+    private void UpdateConnectionModeVisibility()
+    {
+        OnPropertyChanged(nameof(IsAdbMode));
+        OnPropertyChanged(nameof(AdbSettingsVisibility));
+        OnPropertyChanged(nameof(DesktopSettingsVisibility));
     }
 
     private void UpdateCalibrationStatus()
@@ -539,6 +718,8 @@ public sealed class MainViewModel : ObservableObject
 }
 
 public sealed record FitOption(ImageFitMode Value, string Label);
+
+public sealed record ConnectionModeOption(string Value, string Label);
 
 public sealed record PixelArtOption(PixelArtAlgorithm Value, string Label);
 

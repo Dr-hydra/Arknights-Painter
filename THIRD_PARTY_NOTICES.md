@@ -10,6 +10,15 @@ Arknights Painter is distributed under GNU Affero General Public License v3.0.
 
 The Arknights Painter code remains a separate C# implementation. Redistribution and modification of either project must follow AGPL-3.0.
 
+## MaaFramework
+
+- Project: https://github.com/MaaXYZ/MaaFramework
+- Version: 5.12.3 (Windows x64 runtime)
+- License: GNU Affero General Public License v3.0
+- Use in this project: the bundled MaaFramework v5.12.3 Windows x64 runtime provides the Win32 window capture and input backend for the desktop game mode. The application calls the public Maa C API and does not redistribute Maa source code.
+
+The corresponding MaaFramework license text is included in its upstream distribution. Source and license information are available from the project link above.
+
 ## Pixel-art algorithm references
 
 - douloom: https://github.com/lulu0119/douloom (AGPL-3.0)
