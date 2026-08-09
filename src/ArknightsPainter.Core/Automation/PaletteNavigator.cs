@@ -4,7 +4,10 @@ using ArknightsPainter.Core.Models;
 
 namespace ArknightsPainter.Core.Automation;
 
-public sealed class PaletteNavigator(IAdbClient adb, IPaletteVision vision) : IPaletteNavigator
+public sealed class PaletteNavigator(
+    IAdbClient adb,
+    IPaletteVision vision,
+    bool skipVisualValidation = false) : IPaletteNavigator
 {
     private const int MaxScrolls = 30;
 
@@ -13,6 +16,24 @@ public sealed class PaletteNavigator(IAdbClient adb, IPaletteVision vision) : IP
         CalibrationProfile profile,
         CancellationToken cancellationToken = default)
     {
+        if (skipVisualValidation)
+        {
+            var region = profile.PaletteViewport;
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await adb.SwipeAsync(
+                    serial,
+                    new PixelPoint(region.Center.X, region.Y + (int)(region.Height * 0.25)),
+                    new PixelPoint(region.Center.X, region.Bottom - (int)(region.Height * 0.12)),
+                    260,
+                    cancellationToken);
+                await Task.Delay(100, cancellationToken);
+            }
+
+            return;
+        }
+
         string? previousSignature = null;
         var stableCount = 0;
         for (var attempt = 0; attempt < 12; attempt++)
@@ -69,6 +90,12 @@ public sealed class PaletteNavigator(IAdbClient adb, IPaletteVision vision) : IP
             if (match is not null && match.Distance <= 9)
             {
                 await adb.TapAsync(serial, match.Swatch.Center, cancellationToken);
+                if (skipVisualValidation)
+                {
+                    await Task.Delay(100, cancellationToken);
+                    return;
+                }
+
                 await Task.Delay(140, cancellationToken);
                 var confirmation = await adb.CaptureScreenshotAsync(serial, cancellationToken);
                 if (vision.VerifySelectionGlow(confirmation, profile.PaletteViewport, match.Swatch.Center))

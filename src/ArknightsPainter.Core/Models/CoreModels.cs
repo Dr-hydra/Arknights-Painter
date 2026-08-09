@@ -285,7 +285,8 @@ public sealed record DrawProgress(
 public sealed record DrawExecutionOptions(
     int BatchSize = 20,
     TimeSpan? TapDelay = null,
-    int VerificationRetries = 1)
+    int VerificationRetries = 1,
+    bool SkipVisualValidation = false)
 {
     public TimeSpan EffectiveTapDelay => TapDelay ?? TimeSpan.FromMilliseconds(50);
 }

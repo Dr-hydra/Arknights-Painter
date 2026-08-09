@@ -41,6 +41,7 @@ public sealed class MainViewModel : ObservableObject
     private string _adbPath;
     private string _endpoint;
     private string _desktopPid;
+    private bool _ignoreVisualValidation;
     private string _deviceStatus = "正在查找 ADB…";
     private InfoBarSeverity _deviceSeverity = InfoBarSeverity.Informational;
     private string _calibrationStatus = "选择在线设备后进行校准。";
@@ -91,6 +92,7 @@ public sealed class MainViewModel : ObservableObject
         _adbPath = AdbPathResolver.Find(_settings.AdbPath) ?? _settings.AdbPath ?? string.Empty;
         _endpoint = _settings.Endpoint;
         _desktopPid = _settings.DesktopPid;
+        _ignoreVisualValidation = _settings.IgnoreVisualValidation;
         if (IsAdbMode)
         {
             TryCreateAdb();
@@ -211,7 +213,28 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    public bool VisualValidationEnabled
+    {
+        get => !_ignoreVisualValidation;
+        set
+        {
+            var ignoreValidation = !value;
+            if (_ignoreVisualValidation != ignoreValidation)
+            {
+                _ignoreVisualValidation = ignoreValidation;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IgnoreVisualValidation));
+                _settings.IgnoreVisualValidation = ignoreValidation;
+                _settingsStore.Save(_settings);
+            }
+        }
+    }
+
+    public bool IgnoreVisualValidation => _ignoreVisualValidation;
+
     public bool IsAdbMode => string.Equals(SelectedConnectionMode.Value, "adb", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsDesktopMode => !IsAdbMode;
 
     public Visibility AdbSettingsVisibility => IsAdbMode ? Visibility.Visible : Visibility.Collapsed;
 
@@ -298,7 +321,11 @@ public sealed class MainViewModel : ObservableObject
         await RefreshDevicesAsync();
     }
 
-    public Task ConnectionModeChangedAsync() => RefreshDevicesAsync();
+    public void SelectConnectionMode(string value)
+    {
+        SelectedConnectionMode = ConnectionModeOptions.First(option =>
+            string.Equals(option.Value, value, StringComparison.OrdinalIgnoreCase));
+    }
 
     public async Task LoadImageAsync(string path)
     {
@@ -522,7 +549,13 @@ public sealed class MainViewModel : ObservableObject
             AppendLog("警告：当前使用截图可见的 24 色预览色板。" );
         }
 
-        var navigator = new PaletteNavigator(_adb!, _paletteVision);
+        var ignoreVisualValidation = IgnoreVisualValidation;
+        if (ignoreVisualValidation)
+        {
+            AppendLog("警告：已启用强制绘制，将忽略画布、色板、选色发光和落色结果校验。");
+        }
+
+        var navigator = new PaletteNavigator(_adb!, _paletteVision, ignoreVisualValidation);
         var executor = new DrawExecutor(_adb!, _locator, _paletteVision, navigator);
         var progress = new Progress<DrawProgress>(UpdateProgress);
         try
@@ -532,7 +565,7 @@ public sealed class MainViewModel : ObservableObject
                 profile,
                 _palette,
                 DrawPlan.Create(artwork, _palette),
-                new DrawExecutionOptions(),
+                new DrawExecutionOptions(SkipVisualValidation: ignoreVisualValidation),
                 _pauseController,
                 progress,
                 _drawingCts.Token);
@@ -664,6 +697,7 @@ public sealed class MainViewModel : ObservableObject
     private void UpdateConnectionModeVisibility()
     {
         OnPropertyChanged(nameof(IsAdbMode));
+        OnPropertyChanged(nameof(IsDesktopMode));
         OnPropertyChanged(nameof(AdbSettingsVisibility));
         OnPropertyChanged(nameof(DesktopSettingsVisibility));
     }

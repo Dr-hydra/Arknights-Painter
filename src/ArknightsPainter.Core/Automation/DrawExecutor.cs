@@ -24,18 +24,28 @@ public sealed class DrawExecutor(
         var completed = 0;
         try
         {
-            Report(DrawStage.Validating, "正在验证设备画面…");
-            var screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
-            if (locator.ScoreCanvas(screenshot, profile.CanvasBounds) < 0.25)
+            if (options.SkipVisualValidation)
             {
-                throw new InvalidOperationException("当前画面与已校准的 24×24 画布不匹配，已停止绘制。");
+                Report(DrawStage.Validating, "已启用强制绘制，跳过视觉校验。");
+            }
+            else
+            {
+                Report(DrawStage.Validating, "正在验证设备画面…");
+                var screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
+                if (locator.ScoreCanvas(screenshot, profile.CanvasBounds) < 0.25)
+                {
+                    throw new InvalidOperationException("当前画面与已校准的 24×24 画布不匹配，已停止绘制。");
+                }
             }
 
             await paletteNavigator.ResetToTopAsync(serial, profile, cancellationToken);
-            screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
-            if (!paletteVision.ValidateVisiblePalette(screenshot, profile.PaletteViewport, palette))
+            if (!options.SkipVisualValidation)
             {
-                throw new InvalidOperationException("当前颜料与内置色板签名不匹配，已停止绘制。");
+                var screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
+                if (!paletteVision.ValidateVisiblePalette(screenshot, profile.PaletteViewport, palette))
+                {
+                    throw new InvalidOperationException("当前颜料与内置色板签名不匹配，已停止绘制。");
+                }
             }
 
             foreach (var step in plan.Steps)
@@ -53,24 +63,27 @@ public sealed class DrawExecutor(
                     Report(DrawStage.Painting, $"正在绘制 {step.Color.Name}", step.Color.Index);
                 }
 
-                Report(DrawStage.Verifying, $"正在校验 {step.Color.Name}", step.Color.Index);
-                var missing = await FindMissingCellsAsync(serial, profile, step, cancellationToken);
-                for (var retry = 0; missing.Count > 0 && retry < options.VerificationRetries; retry++)
+                if (!options.SkipVisualValidation)
                 {
-                    foreach (var cell in missing)
+                    Report(DrawStage.Verifying, $"正在校验 {step.Color.Name}", step.Color.Index);
+                    var missing = await FindMissingCellsAsync(serial, profile, step, cancellationToken);
+                    for (var retry = 0; missing.Count > 0 && retry < options.VerificationRetries; retry++)
                     {
-                        await WaitForResumeAsync(step.Color.Index);
-                        var point = profile.CanvasBounds.GridCenter(cell);
-                        await adb.SwipeAsync(serial, point, point, 80, cancellationToken);
-                        await Task.Delay(TimeSpan.FromMilliseconds(80), cancellationToken);
+                        foreach (var cell in missing)
+                        {
+                            await WaitForResumeAsync(step.Color.Index);
+                            var point = profile.CanvasBounds.GridCenter(cell);
+                            await adb.SwipeAsync(serial, point, point, 80, cancellationToken);
+                            await Task.Delay(TimeSpan.FromMilliseconds(80), cancellationToken);
+                        }
+
+                        missing = await FindMissingCellsAsync(serial, profile, step, cancellationToken);
                     }
 
-                    missing = await FindMissingCellsAsync(serial, profile, step, cancellationToken);
-                }
-
-                if (missing.Count > 0)
-                {
-                    throw new DrawingVerificationException(step.Color, missing);
+                    if (missing.Count > 0)
+                    {
+                        throw new DrawingVerificationException(step.Color, missing);
+                    }
                 }
             }
 

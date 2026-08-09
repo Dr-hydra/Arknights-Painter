@@ -49,6 +49,17 @@ if ($SingleFile) {
     $maaOutput = Join-Path $output 'Assets\Maa'
     New-Item -ItemType Directory -Path $maaOutput -Force | Out-Null
     Copy-Item -Path (Join-Path $maaSource '*.dll') -Destination $maaOutput -Force
+
+    $adbSource = Join-Path $repositoryRoot 'src\ArknightsPainter.App\Assets\Adb'
+    $adbOutput = Join-Path $output 'Assets\Adb'
+    New-Item -ItemType Directory -Path $adbOutput -Force | Out-Null
+    Copy-Item -Path (Join-Path $adbSource '*') -Destination $adbOutput -Force
+
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $output
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'LICENSE') -Destination $output
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'THIRD_PARTY_NOTICES.md') -Destination $output
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'CHANGELOG.md') -Destination $output
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\使用说明.md') -Destination $output
 } else {
     dotnet build $project -c $Configuration -p:Platform=x64
 

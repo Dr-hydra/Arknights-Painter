@@ -12,7 +12,7 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/Dr-hydra/Arknights-Painter/releases/latest) 下载最新版。推荐使用 `ArknightsPainter.App.exe` 单文件版本；ADB 不包含在程序中，需要使用模拟器自带的 ADB 或另行安装 Android Platform Tools。
+前往 [GitHub Releases](https://github.com/Dr-hydra/Arknights-Painter/releases/latest) 下载最新版 ZIP，完整解压后运行 `ArknightsPainter.App.exe`。发布包已包含 .NET 10、Windows App SDK、电脑版所需 MaaFramework 组件和备用 ADB，不需要另外安装运行库或 Android Platform Tools。
 
 ## 功能
 
@@ -20,7 +20,7 @@
 - 三种转换算法：适合照片的拼豆均色、适合图标和已有像素画的拼豆主色，以及原有感知平滑。
 - CIEDE2000 感知色差量化，内置经过截图与真机采集双重验证的 40 色固定色板。
 - 支持无抖动、Atkinson、Floyd-Steinberg 和 Bayer 4×4，实时显示 24×24 网格预览和颜色用量。
-- 自动查找 MuMu、雷电、蓝叠或 PATH 中的 ADB，也可手动指定 `adb.exe`。
+- 自动查找 MuMu、雷电、蓝叠或 PATH 中的 ADB，也可手动指定 `adb.exe`；均不可用时自动回退到内置 ADB。
 - 支持原生电脑版窗口：选择“电脑版窗口（PID）”，填写游戏进程 PID 即可连接，不需要 ADB。
 - 自动识别 24×24 画布与滚动颜料区；失败时可在截图上拖动、缩放校准框。
 - 按颜料分组、20 格分批点击，支持暂停、继续、取消和漏格重试。
@@ -30,8 +30,8 @@
 
 ## 使用
 
-1. 启动安卓模拟器或原生电脑版，并进入横屏的 24×24 绘画页面。
-2. 启动 `ArknightsPainter.App.exe`，在“连接设备”中选择 ADB 或“电脑版窗口（PID）”。电脑版填写任务管理器中的 `Arknights.exe` PID；安卓用户确认设备状态为 `device`。
+1. 完整解压发布包，启动安卓模拟器或原生电脑版，并进入横屏的 24×24 绘画页面。
+2. 启动 `ArknightsPainter.App.exe`，在“连接设备”中选择“模拟器”或“电脑版”。电脑版会按需申请管理员权限并自动发现进程，也可填写任务管理器中的 `Arknights.exe` PID；安卓用户确认设备状态为 `device`。
 3. 导入或拖入 PNG、JPEG、BMP、WebP 图片，设置构图、转换算法、背景和抖动。
 4. 点击“自动识别”；识别失败时使用“手动调整”。
 5. 检查预览后点击“开始绘制”。绘制过程中不要切换模拟器页面或改变窗口方向。
@@ -76,7 +76,7 @@ dotnet run --project tools/ArknightsPainter.PaletteCapture -c Release -- `
 ./scripts/publish.ps1
 ```
 
-输出位于 `artifacts/ArknightsPainter-win-x64`。该目录使用 .NET 10 和 Windows App SDK 1.8，不包含 Android Platform Tools；目标机器需安装 .NET 10 Desktop Runtime。发布脚本会自动启动成品进行烟雾检查，启动失败时不会静默交付。
+输出位于 `artifacts/ArknightsPainter-win-x64`。这是用于开发检查的普通目录版本；目标机器需安装 .NET 10 Desktop Runtime。发布脚本会自动启动成品进行烟雾检查，启动失败时不会静默交付。
 
 单文件、自包含发布：
 
@@ -84,7 +84,7 @@ dotnet run --project tools/ArknightsPainter.PaletteCapture -c Release -- `
 ./scripts/publish.ps1 -SingleFile
 ```
 
-输出位于 `artifacts/ArknightsPainter-win-x64-single-file`，运行时不要求预装 .NET 10 Desktop Runtime。快速测试发布可附加 `-SkipSmoke`，正式交付仍建议保留默认启动检查。单文件首次启动时会由 .NET 将 WinUI 原生组件解压到用户临时目录。
+输出位于 `artifacts/ArknightsPainter-win-x64-single-file`，运行时不要求预装 .NET 10 Desktop Runtime。该目录包含单文件 EXE、MaaFramework 组件、备用 ADB、许可证和使用文档，正式发布时应将整个目录打成一个 ZIP。快速测试发布可附加 `-SkipSmoke`，正式交付仍建议保留默认启动检查。单文件首次启动时会由 .NET 将 WinUI 原生组件解压到用户临时目录。
 
 ## 许可证
 

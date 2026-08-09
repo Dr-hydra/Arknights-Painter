@@ -25,6 +25,10 @@ public static class AdbPathResolver
             candidates.Add(Path.Combine(directory.Trim(), "adb.exe"));
         }
 
+        // Keep the bundled copy last so emulator-specific ADB builds remain
+        // preferred, while portable installs still have a reliable fallback.
+        candidates.Add(Path.Combine(AppContext.BaseDirectory, "Assets", "Adb", "adb.exe"));
+
         return candidates.Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(path => Path.GetFullPath(path!))
             .FirstOrDefault(File.Exists);

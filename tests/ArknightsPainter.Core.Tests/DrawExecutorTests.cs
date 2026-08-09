@@ -36,6 +36,42 @@ public sealed class DrawExecutorTests
     }
 
     [Fact]
+    public async Task Executor_SkipVisualValidation_DoesNotCaptureVerificationScreenshots()
+    {
+        var color = new RgbColor(20, 40, 60);
+        var palette = TestPalette.Create(color);
+        var artwork = new Artwork24(Enumerable.Repeat(0, Artwork24.PixelCount));
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(255, 255, 255));
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysInvalidLocator(),
+            new AlwaysInvalidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(20, TimeSpan.Zero, 1, SkipVisualValidation: true),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(0, adb.ScreenshotCount);
+        Assert.Equal(DrawStage.Completed, progress.Last?.Stage);
+    }
+
+    [Fact]
     public async Task PauseController_BlocksUntilResume()
     {
         var controller = new PauseController();
@@ -57,6 +93,8 @@ public sealed class DrawExecutorTests
         public string ExecutablePath => "fake-adb";
 
         public int BatchCount { get; private set; }
+
+        public int ScreenshotCount { get; private set; }
 
         public RgbColor SelectedColor { get; set; }
 
@@ -88,6 +126,7 @@ public sealed class DrawExecutorTests
 
         public Task<byte[]> CaptureScreenshotAsync(string serial, CancellationToken cancellationToken = default)
         {
+            ScreenshotCount++;
             using var bitmap = new SKBitmap(300, 300);
             bitmap.Erase(SKColors.White);
             using var canvas = new SKCanvas(bitmap);
@@ -136,6 +175,33 @@ public sealed class DrawExecutorTests
         public bool ValidateVisiblePalette(byte[] screenshotPng, PixelRect paletteViewport, PaletteDefinition palette, double minimumMatchRatio = 0.65) => true;
 
         public bool VerifySelectionGlow(byte[] screenshotPng, PixelRect paletteViewport, PixelPoint selectedCenter) => true;
+    }
+
+    private sealed class AlwaysInvalidLocator : IScreenLocator
+    {
+        public ScreenLocationResult Locate(string deviceSerial, byte[] screenshotPng) =>
+            new(false, null, 0, string.Empty);
+
+        public double ScoreCanvas(byte[] screenshotPng, PixelRect bounds) => 0;
+    }
+
+    private sealed class AlwaysInvalidPaletteVision : IPaletteVision
+    {
+        public IReadOnlyList<VisibleSwatch> ReadVisibleSwatches(
+            byte[] screenshotPng,
+            PixelRect paletteViewport,
+            int columns = 4) => [];
+
+        public bool ValidateVisiblePalette(
+            byte[] screenshotPng,
+            PixelRect paletteViewport,
+            PaletteDefinition palette,
+            double minimumMatchRatio = 0.65) => false;
+
+        public bool VerifySelectionGlow(
+            byte[] screenshotPng,
+            PixelRect paletteViewport,
+            PixelPoint selectedCenter) => false;
     }
 
     private sealed class InlineProgress : IProgress<DrawProgress>

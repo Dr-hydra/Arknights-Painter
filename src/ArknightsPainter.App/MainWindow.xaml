@@ -25,7 +25,7 @@
             Background="Transparent">
             <Grid
                 x:Name="AppTitleBar"
-                Margin="0,0,132,0"
+                Margin="0,0,380,0"
                 Background="Transparent">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -49,17 +49,30 @@
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                     Text="24×24" />
             </Grid>
-            <Button
+            <StackPanel
                 HorizontalAlignment="Right"
                 Margin="0,0,148,0"
-                Padding="8,4"
-                Click="OpenGitHub_Click"
-                ToolTipService.ToolTip="打开 GitHub 项目页面">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE8A7;" />
-                    <TextBlock Text="GitHub 项目" />
-                </StackPanel>
-            </Button>
+                Orientation="Horizontal"
+                Spacing="8">
+                <Button
+                    Padding="8,4"
+                    Click="OpenBilibili_Click"
+                    ToolTipService.ToolTip="打开 B站主页">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE768;" />
+                        <TextBlock Text="B站主页" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Padding="8,4"
+                    Click="OpenGitHub_Click"
+                    ToolTipService.ToolTip="打开 GitHub 项目页面">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE8A7;" />
+                        <TextBlock Text="GitHub" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <Grid
@@ -242,11 +255,38 @@
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="14">
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="连接设备" />
-                    <ComboBox
-                        DisplayMemberPath="Label"
-                        ItemsSource="{Binding ConnectionModeOptions}"
-                        SelectedItem="{Binding SelectedConnectionMode, Mode=TwoWay}"
-                        SelectionChanged="ConnectionMode_Changed" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ToggleButton
+                            MinHeight="44"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            AutomationProperties.Name="选择 Android 模拟器模式"
+                            Click="AdbMode_Click"
+                            IsChecked="{Binding IsAdbMode, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <FontIcon Glyph="&#xE8EA;" />
+                                <TextBlock Text="模拟器" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Grid.Column="1"
+                            MinHeight="44"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            AutomationProperties.Name="选择电脑版模式"
+                            Click="DesktopMode_Click"
+                            IsChecked="{Binding IsDesktopMode, Mode=OneWay}"
+                            ToolTipService.ToolTip="电脑版需要管理员权限">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <FontIcon Glyph="&#xE7F8;" />
+                                <TextBlock Text="电脑版" />
+                            </StackPanel>
+                        </ToggleButton>
+                    </Grid>
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -331,6 +371,17 @@
 
                     <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="绘制" />
+                    <ToggleSwitch
+                        Header="绘制安全校验"
+                        IsOn="{Binding VisualValidationEnabled, Mode=TwoWay}"
+                        OffContent="已关闭：直接绘制"
+                        OnContent="已开启：校验后绘制" />
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="{Binding IgnoreVisualValidation}"
+                        Message="将跳过画布、色板、选色发光和落色结果校验；设备状态、校准坐标和颜料定位仍会保留。"
+                        Severity="Warning"
+                        Title="视觉校验已关闭" />
                     <ProgressBar
                         Maximum="100"
                         Minimum="0"
@@ -358,6 +409,9 @@
                             HorizontalAlignment="Stretch"
                             IsEnabled="{Binding CanPause}"
                             Click="PauseDrawing_Click">
+                            <Button.KeyboardAccelerators>
+                                <KeyboardAccelerator Key="F8" Invoked="PauseDrawingAccelerator_Invoked" />
+                            </Button.KeyboardAccelerators>
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE769;" />
                                 <TextBlock Text="{Binding PauseButtonLabel}" />
@@ -374,6 +428,11 @@
                             </StackPanel>
                         </Button>
                     </Grid>
+                    <TextBlock
+                        HorizontalAlignment="Right"
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="F8：暂停 / 继续" />
                 </StackPanel>
             </ScrollViewer>
         </Grid>

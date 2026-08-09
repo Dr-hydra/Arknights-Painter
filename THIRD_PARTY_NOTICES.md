@@ -19,6 +19,14 @@ The Arknights Painter code remains a separate C# implementation. Redistribution 
 
 The corresponding MaaFramework license text is included in its upstream distribution. Source and license information are available from the project link above.
 
+## Android SDK Platform-Tools
+
+- Project: https://developer.android.com/tools/releases/platform-tools
+- Component: Android Debug Bridge 35.0.2
+- Use in this project: the Windows x64 ADB executable and its two runtime DLLs are bundled as a fallback when no configured, emulator-provided, SDK, or PATH copy can be found.
+
+The upstream `NOTICE.txt` is distributed with the bundled files under `Assets/Adb`.
+
 ## Pixel-art algorithm references
 
 - douloom: https://github.com/lulu0119/douloom (AGPL-3.0)

@@ -5,6 +5,8 @@ using ArknightsPainter.Core.Models;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SkiaSharp;
 using Windows.ApplicationModel.DataTransfer;
@@ -44,6 +46,11 @@ public sealed partial class MainWindow : Window
         }
 
         _loaded = true;
+        if (ViewModel.IsDesktopMode && await RequestDesktopElevationAsync())
+        {
+            return;
+        }
+
         await ViewModel.InitializeAsync();
     }
 
@@ -63,6 +70,19 @@ public sealed partial class MainWindow : Window
         {
             var launched = await Launcher.LaunchUriAsync(
                 new Uri("https://github.com/Dr-hydra/Arknights-Painter"));
+            if (!launched)
+            {
+                throw new InvalidOperationException("系统未能打开默认浏览器。");
+            }
+        });
+    }
+
+    private async void OpenBilibili_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(async () =>
+        {
+            var launched = await Launcher.LaunchUriAsync(
+                new Uri("https://space.bilibili.com/441133155"));
             if (!launched)
             {
                 throw new InvalidOperationException("系统未能打开默认浏览器。");
@@ -122,11 +142,28 @@ public sealed partial class MainWindow : Window
     private async void Connect_Click(object sender, RoutedEventArgs e) =>
         await RunUiActionAsync(ViewModel.ConnectAsync);
 
-    private async void ConnectionMode_Changed(object sender, SelectionChangedEventArgs e)
+    private async void AdbMode_Click(object sender, RoutedEventArgs e)
     {
+        ((ToggleButton)sender).IsChecked = true;
+        ViewModel.SelectConnectionMode("adb");
         if (_loaded)
         {
-            await RunUiActionAsync(ViewModel.ConnectionModeChangedAsync);
+            await RunUiActionAsync(ViewModel.RefreshDevicesAsync);
+        }
+    }
+
+    private async void DesktopMode_Click(object sender, RoutedEventArgs e)
+    {
+        ((ToggleButton)sender).IsChecked = true;
+        ViewModel.SelectConnectionMode("win32");
+        if (await RequestDesktopElevationAsync())
+        {
+            return;
+        }
+
+        if (_loaded)
+        {
+            await RunUiActionAsync(ViewModel.RefreshDevicesAsync);
         }
     }
 
@@ -183,6 +220,14 @@ public sealed partial class MainWindow : Window
 
     private void PauseDrawing_Click(object sender, RoutedEventArgs e) => ViewModel.TogglePause();
 
+    private void PauseDrawingAccelerator_Invoked(
+        KeyboardAccelerator sender,
+        KeyboardAcceleratorInvokedEventArgs args)
+    {
+        ViewModel.TogglePause();
+        args.Handled = true;
+    }
+
     private void CancelDrawing_Click(object sender, RoutedEventArgs e) => ViewModel.CancelDrawing();
 
     private void ViewModel_PreviewChanged(object? sender, byte[] png)
@@ -214,15 +259,47 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = RootGrid.XamlRoot,
-                Title = "操作失败",
-                Content = ex.Message,
-                CloseButtonText = "关闭"
-            };
-            await dialog.ShowAsync();
+            await ShowErrorAsync(ex.Message);
         }
+    }
+
+    private async Task<bool> RequestDesktopElevationAsync()
+    {
+        if (ElevationService.IsAdministrator)
+        {
+            return false;
+        }
+
+        try
+        {
+            if (ElevationService.TryRestartAsAdministrator())
+            {
+                Close();
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            ViewModel.SelectConnectionMode("adb");
+            await ShowErrorAsync(ex.Message);
+            return false;
+        }
+
+        ViewModel.SelectConnectionMode("adb");
+        await ShowErrorAsync("电脑版控制需要管理员权限。权限申请已取消，已切回模拟器模式。");
+        return false;
+    }
+
+    private async Task ShowErrorAsync(string message)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = RootGrid.XamlRoot,
+            Title = "操作失败",
+            Content = message,
+            CloseButtonText = "关闭"
+        };
+        await dialog.ShowAsync();
     }
 
     private static PixelRect ScaleReference(

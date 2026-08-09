@@ -13,6 +13,8 @@ public sealed class AppSettings
 
     public string DesktopPid { get; set; } = string.Empty;
 
+    public bool IgnoreVisualValidation { get; set; }
+
     public List<CalibrationProfile> Calibrations { get; set; } = [];
 }
 

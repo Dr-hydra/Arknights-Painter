@@ -11,10 +11,22 @@
         <x:Double x:Key="ContentDialogMaxWidth">1100</x:Double>
     </ContentDialog.Resources>
     <StackPanel Spacing="12">
-        <TextBlock
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            Text="以下图片来自当前模拟器的实时截图，不是导入图片。拖动矩形调整位置，拖动右下角方块调整大小。"
-            TextWrapping="Wrap" />
+        <StackPanel Spacing="4">
+            <TextBlock
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                Text="以下图片来自当前设备的实时截图。拖动矩形调整位置，拖动右下角方块调整大小。"
+                TextWrapping="Wrap" />
+            <TextBlock
+                FontWeight="SemiBold"
+                Foreground="#00AEEF"
+                Text="蓝色画布框：四边贴紧 24×24 画布的外边框。"
+                TextWrapping="Wrap" />
+            <TextBlock
+                FontWeight="SemiBold"
+                Foreground="#D98200"
+                Text="橙色颜料框：只框右侧下半区的色板部分，不要包含上方工具和按钮。"
+                TextWrapping="Wrap" />
+        </StackPanel>
         <Border
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="1"
@@ -38,7 +50,7 @@
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Top"
                                 Foreground="White"
-                                Text="画布" />
+                                Text="画布（四边贴紧）" />
                             <Border
                                 x:Name="CanvasResizeHandle"
                                 Width="18"
@@ -68,7 +80,7 @@
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Top"
                                 Foreground="White"
-                                Text="颜料" />
+                                Text="颜料（仅下半区色板）" />
                             <Border
                                 x:Name="PaletteResizeHandle"
                                 Width="18"
