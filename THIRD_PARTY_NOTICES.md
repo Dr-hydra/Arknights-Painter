@@ -40,6 +40,8 @@ The implementations in Arknights Painter are independent C# implementations. No 
 - Microsoft.WindowsAppSDK: MIT License
 - CommunityToolkit.Mvvm: MIT License
 - SkiaSharp and SkiaSharp.NativeAssets.Win32: MIT License
+- Svg.Skia 5.2.0 and its Svg.* dependencies: MIT License
+- HarfBuzzSharp and HarfBuzzSharp.NativeAssets.Win32: MIT License
 - xUnit, Microsoft.NET.Test.Sdk, coverlet.collector: their respective open-source licenses; test-only dependencies are not shipped as part of the desktop application.
 
 The corresponding package license metadata and source links are available from https://www.nuget.org/.

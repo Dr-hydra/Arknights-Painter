@@ -167,6 +167,61 @@ public sealed class ImageQuantizerTests : IDisposable
         Assert.Equal(480, preview.Height);
     }
 
+    [Fact]
+    public async Task Svg_ViewBoxIsRasterizedAndConverted()
+    {
+        var path = Path.Combine(_temporaryDirectory, "solid.svg");
+        File.WriteAllText(path, """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+              <rect width="200" height="100" fill="#ff0000" />
+            </svg>
+            """);
+        var palette = TestPalette.Create(new RgbColor(255, 0, 0), new RgbColor(0, 0, 255));
+        var quantizer = new SkiaImageQuantizer();
+
+        using var loaded = SkiaImageLoader.LoadOriented(path);
+        var artwork = await quantizer.ConvertAsync(
+            path,
+            palette,
+            new ImageConversionOptions(ImageFitMode.Stretch, new RgbColor(255, 255, 255), false));
+
+        Assert.Equal(2048, loaded.Width);
+        Assert.Equal(1024, loaded.Height);
+        Assert.Equal(SKColors.Red, loaded.GetPixel(loaded.Width / 2, loaded.Height / 2));
+        Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(0, index));
+    }
+
+    [Fact]
+    public void Svg_TransparencyIsPreserved()
+    {
+        var path = Path.Combine(_temporaryDirectory, "transparent.svg");
+        File.WriteAllText(path, """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="25" fill="#0080ff" />
+            </svg>
+            """);
+
+        using var loaded = SkiaImageLoader.LoadOriented(path);
+
+        Assert.Equal(0, loaded.GetPixel(0, 0).Alpha);
+        Assert.Equal(new SKColor(0, 128, 255), loaded.GetPixel(loaded.Width / 2, loaded.Height / 2));
+    }
+
+    [Fact]
+    public void Svg_ExternalResourcesAreRejected()
+    {
+        var path = Path.Combine(_temporaryDirectory, "external.svg");
+        File.WriteAllText(path, """
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+              <image href="https://example.com/image.png" width="100" height="100" />
+            </svg>
+            """);
+
+        var exception = Assert.Throws<InvalidDataException>(() => SkiaImageLoader.LoadOriented(path));
+
+        Assert.Contains("外部", exception.Message);
+    }
+
     public void Dispose()
     {
         Directory.Delete(_temporaryDirectory, true);

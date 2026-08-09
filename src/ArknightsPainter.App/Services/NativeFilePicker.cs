@@ -35,8 +35,8 @@ internal static class NativeFilePicker
                 2,
                 [
                     new FileTypeFilter(
-                        "图片文件 (*.png;*.jpg;*.jpeg;*.bmp;*.webp)",
-                        "*.png;*.jpg;*.jpeg;*.bmp;*.webp"),
+                        "图片文件 (*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.svg)",
+                        "*.png;*.jpg;*.jpeg;*.bmp;*.webp;*.svg"),
                     new FileTypeFilter("所有文件 (*.*)", "*.*")
                 ]);
             dialog.SetFileTypeIndex(1);
