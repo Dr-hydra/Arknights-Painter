@@ -1,61 +1,99 @@
 using ArknightsPainter.Core.Imaging;
-using ArknightsPainter.Core.Models;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Shapes;
 using SkiaSharp;
 using Windows.Storage.Streams;
+using Windows.UI;
 
 namespace ArknightsPainter.App.Dialogs;
 
 public sealed partial class CropDialog : ContentDialog
 {
-    private const double MinimumCropSize = 36;
-    private readonly byte[] _preview;
-    private readonly int _sourceWidth;
-    private readonly int _sourceHeight;
-    private FrameworkElement? _captureElement;
-    private ResizeEdges _resizeEdges;
-    private Windows.Foundation.Point _startPointer;
-    private double _startLeft;
-    private double _startTop;
-    private double _startWidth;
-    private double _startHeight;
+    private const double SurfaceWidth = 620;
+    private const double SurfaceHeight = 470;
+    private const double CropRatio = 0.42;
+    private const double GridDivisions = 24;
+    private const int MaximumOutputSize = 2048;
+    private readonly SKBitmap _source;
+    private byte[]? _croppedPng;
+    private double _scale = 1;
+    private double _offsetX;
+    private double _offsetY;
+    private bool _dragging;
+    private Windows.Foundation.Point _dragStart;
+    private double _startOffsetX;
+    private double _startOffsetY;
 
-    public CropDialog(string imagePath, ImageCropRect? initialCrop)
+    private double CropSize => Math.Min(SurfaceWidth, SurfaceHeight) * CropRatio;
+
+    public CropDialog(string imagePath)
     {
         InitializeComponent();
-        using var source = SkiaImageLoader.LoadOriented(imagePath);
-        _sourceWidth = source.Width;
-        _sourceHeight = source.Height;
-
-        var scale = Math.Min(900.0 / source.Width, 560.0 / source.Height);
-        var displayWidth = Math.Max(120, (int)Math.Round(source.Width * scale));
-        var displayHeight = Math.Max(120, (int)Math.Round(source.Height * scale));
-        CropSurface.Width = displayWidth;
-        CropSurface.Height = displayHeight;
-        CropOverlay.Width = displayWidth;
-        CropOverlay.Height = displayHeight;
-        _preview = RenderPreview(source, displayWidth, displayHeight);
-
-        var crop = initialCrop is { IsValid: true } value ? value : ImageCropRect.Full;
-        SetCrop(crop);
+        _source = SkiaImageLoader.LoadOriented(imagePath);
+        BuildGuide();
+        ResetTransform();
+        PrimaryButtonClick += (_, _) => _croppedPng = CreateCroppedPng();
         Loaded += CropDialog_Loaded;
+        Closed += (_, _) => _source.Dispose();
     }
 
-    public ImageCropRect CreateCropRect() => new(
-        Canvas.GetLeft(CropRegion) / CropOverlay.Width,
-        Canvas.GetTop(CropRegion) / CropOverlay.Height,
-        CropRegion.Width / CropOverlay.Width,
-        CropRegion.Height / CropOverlay.Height);
+    public byte[] GetCroppedPng() => _croppedPng
+        ?? throw new InvalidOperationException("未生成裁切结果。");
+
+    private byte[] CreateCroppedPng()
+    {
+        var size = CropSize;
+        var left = (SurfaceWidth - size) / 2;
+        var top = (SurfaceHeight - size) / 2;
+        var sourceLeft = (left - _offsetX) / _scale;
+        var sourceTop = (top - _offsetY) / _scale;
+        var sourceSpan = size / _scale;
+        var outputSize = Math.Clamp((int)Math.Round(sourceSpan), 1, MaximumOutputSize);
+        using var output = new SKBitmap(outputSize, outputSize, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var canvas = new SKCanvas(output);
+        canvas.Clear(SKColors.Transparent);
+        var visibleLeft = Math.Max(sourceLeft, 0);
+        var visibleTop = Math.Max(sourceTop, 0);
+        var visibleRight = Math.Min(sourceLeft + sourceSpan, _source.Width);
+        var visibleBottom = Math.Min(sourceTop + sourceSpan, _source.Height);
+        if (visibleRight > visibleLeft && visibleBottom > visibleTop)
+        {
+            var sourceRect = new SKRect(
+                (float)visibleLeft,
+                (float)visibleTop,
+                (float)visibleRight,
+                (float)visibleBottom);
+            var targetRect = new SKRect(
+                (float)((visibleLeft - sourceLeft) * outputSize / sourceSpan),
+                (float)((visibleTop - sourceTop) * outputSize / sourceSpan),
+                (float)((visibleRight - sourceLeft) * outputSize / sourceSpan),
+                (float)((visibleBottom - sourceTop) * outputSize / sourceSpan));
+            using var paint = new SKPaint { IsAntialias = true };
+            canvas.DrawBitmap(
+                _source,
+                sourceRect,
+                targetRect,
+                new SKSamplingOptions(SKCubicResampler.Mitchell),
+                paint);
+        }
+
+        canvas.Flush();
+        using var image = SKImage.FromBitmap(output);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
 
     private async void CropDialog_Loaded(object sender, RoutedEventArgs e)
     {
         using var stream = new InMemoryRandomAccessStream();
         using (var writer = new DataWriter(stream))
         {
-            writer.WriteBytes(_preview);
+            writer.WriteBytes(RenderPreview());
             await writer.StoreAsync();
             writer.DetachStream();
         }
@@ -66,182 +104,134 @@ public sealed partial class CropDialog : ContentDialog
         SourceImage.Source = source;
     }
 
-    private void Reset_Click(object sender, RoutedEventArgs e) => SetCrop(ImageCropRect.Full);
+    private void Reset_Click(object sender, RoutedEventArgs e) => ResetTransform();
 
-    private void CenterSquare_Click(object sender, RoutedEventArgs e)
+    private void Surface_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
-        if (_sourceWidth >= _sourceHeight)
-        {
-            var width = _sourceHeight / (double)_sourceWidth;
-            SetCrop(new ImageCropRect((1 - width) / 2, 0, width, 1));
-        }
-        else
-        {
-            var height = _sourceWidth / (double)_sourceHeight;
-            SetCrop(new ImageCropRect(0, (1 - height) / 2, 1, height));
-        }
-    }
-
-    private void CropRegion_PointerPressed(object sender, PointerRoutedEventArgs e) =>
-        BeginInteraction((FrameworkElement)sender, ResizeEdges.None, e);
-
-    private void ResizeHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
-    {
-        var handle = (FrameworkElement)sender;
-        var edges = ParseEdges(handle.Tag as string);
-        BeginInteraction(handle, edges, e);
+        _dragging = true;
+        _dragStart = e.GetCurrentPoint(CropSurface).Position;
+        _startOffsetX = _offsetX;
+        _startOffsetY = _offsetY;
+        CropSurface.CapturePointer(e.Pointer);
         e.Handled = true;
     }
 
-    private void BeginInteraction(FrameworkElement captureElement, ResizeEdges edges, PointerRoutedEventArgs e)
+    private void Surface_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
-        _captureElement = captureElement;
-        _resizeEdges = edges;
-        _startPointer = e.GetCurrentPoint(CropOverlay).Position;
-        _startLeft = Canvas.GetLeft(CropRegion);
-        _startTop = Canvas.GetTop(CropRegion);
-        _startWidth = CropRegion.Width;
-        _startHeight = CropRegion.Height;
-        captureElement.CapturePointer(e.Pointer);
-    }
-
-    private void CropRegion_PointerMoved(object sender, PointerRoutedEventArgs e) => UpdateInteraction(e);
-
-    private void ResizeHandle_PointerMoved(object sender, PointerRoutedEventArgs e)
-    {
-        UpdateInteraction(e);
-        e.Handled = true;
-    }
-
-    private void UpdateInteraction(PointerRoutedEventArgs e)
-    {
-        if (_captureElement is null || !e.GetCurrentPoint(CropOverlay).Properties.IsLeftButtonPressed)
+        if (!_dragging || !e.GetCurrentPoint(CropSurface).Properties.IsLeftButtonPressed)
         {
             return;
         }
 
-        var current = e.GetCurrentPoint(CropOverlay).Position;
-        var deltaX = current.X - _startPointer.X;
-        var deltaY = current.Y - _startPointer.Y;
-        if (_resizeEdges == ResizeEdges.None)
-        {
-            SetCropBounds(
-                Math.Clamp(_startLeft + deltaX, 0, CropOverlay.Width - _startWidth),
-                Math.Clamp(_startTop + deltaY, 0, CropOverlay.Height - _startHeight),
-                _startWidth,
-                _startHeight);
-            return;
-        }
-
-        var left = _startLeft;
-        var top = _startTop;
-        var right = _startLeft + _startWidth;
-        var bottom = _startTop + _startHeight;
-        if (_resizeEdges.HasFlag(ResizeEdges.Left))
-        {
-            left = Math.Clamp(_startLeft + deltaX, 0, right - MinimumCropSize);
-        }
-        if (_resizeEdges.HasFlag(ResizeEdges.Right))
-        {
-            right = Math.Clamp(right + deltaX, left + MinimumCropSize, CropOverlay.Width);
-        }
-        if (_resizeEdges.HasFlag(ResizeEdges.Top))
-        {
-            top = Math.Clamp(_startTop + deltaY, 0, bottom - MinimumCropSize);
-        }
-        if (_resizeEdges.HasFlag(ResizeEdges.Bottom))
-        {
-            bottom = Math.Clamp(bottom + deltaY, top + MinimumCropSize, CropOverlay.Height);
-        }
-
-        SetCropBounds(left, top, right - left, bottom - top);
+        var current = e.GetCurrentPoint(CropSurface).Position;
+        _offsetX = _startOffsetX + current.X - _dragStart.X;
+        _offsetY = _startOffsetY + current.Y - _dragStart.Y;
+        ApplyTransform();
+        e.Handled = true;
     }
 
     private void Interaction_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
-        var capture = _captureElement;
-        _captureElement = null;
-        capture?.ReleasePointerCapture(e.Pointer);
+        _dragging = false;
+        CropSurface.ReleasePointerCapture(e.Pointer);
     }
 
-    private void SetCrop(ImageCropRect crop) => SetCropBounds(
-        crop.X * CropOverlay.Width,
-        crop.Y * CropOverlay.Height,
-        crop.Width * CropOverlay.Width,
-        crop.Height * CropOverlay.Height);
-
-    private void SetCropBounds(double left, double top, double width, double height)
+    private void Surface_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
     {
-        Canvas.SetLeft(CropRegion, left);
-        Canvas.SetTop(CropRegion, top);
-        CropRegion.Width = width;
-        CropRegion.Height = height;
-        UpdateShades(left, top, width, height);
-        CropSummary.Text = $"{Math.Max(1, (int)Math.Round(width / CropOverlay.Width * _sourceWidth))} × " +
-                           $"{Math.Max(1, (int)Math.Round(height / CropOverlay.Height * _sourceHeight))} px";
+        var point = e.GetCurrentPoint(CropSurface);
+        var factor = Math.Pow(1.1, point.Properties.MouseWheelDelta / 120.0);
+        var sourceX = (point.Position.X - _offsetX) / _scale;
+        var sourceY = (point.Position.Y - _offsetY) / _scale;
+        _scale = Math.Clamp(_scale * factor, 0.02, 64);
+        _offsetX = point.Position.X - (sourceX * _scale);
+        _offsetY = point.Position.Y - (sourceY * _scale);
+        ApplyTransform();
+        e.Handled = true;
     }
 
-    private void UpdateShades(double left, double top, double width, double height)
+    private void BuildGuide()
     {
-        SetCanvasRect(ShadeLeft, 0, 0, left, CropOverlay.Height);
-        SetCanvasRect(ShadeRight, left + width, 0, CropOverlay.Width - left - width, CropOverlay.Height);
-        SetCanvasRect(ShadeTop, left, 0, width, top);
-        SetCanvasRect(ShadeBottom, left, top + height, width, CropOverlay.Height - top - height);
-    }
-
-    private static void SetCanvasRect(FrameworkElement element, double left, double top, double width, double height)
-    {
-        Canvas.SetLeft(element, left);
-        Canvas.SetTop(element, top);
-        element.Width = Math.Max(0, width);
-        element.Height = Math.Max(0, height);
-    }
-
-    private static ResizeEdges ParseEdges(string? value)
-    {
-        var result = ResizeEdges.None;
-        foreach (var part in (value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries))
+        var size = CropSize;
+        var left = (SurfaceWidth - size) / 2;
+        var top = (SurfaceHeight - size) / 2;
+        SetCanvasRect(ShadeLeft, 0, 0, left, SurfaceHeight);
+        SetCanvasRect(ShadeRight, left + size, 0, SurfaceWidth - left - size, SurfaceHeight);
+        SetCanvasRect(ShadeTop, left, 0, size, top);
+        SetCanvasRect(ShadeBottom, left, top + size, size, SurfaceHeight - top - size);
+        SetCanvasRect(CropFrame, left, top, size, size);
+        Canvas.SetLeft(GridCanvas, left);
+        Canvas.SetTop(GridCanvas, top);
+        GridCanvas.Width = size;
+        GridCanvas.Height = size;
+        var brush = new SolidColorBrush(Color.FromArgb(150, 255, 255, 255));
+        for (var i = 1; i < GridDivisions; i++)
         {
-            result |= Enum.Parse<ResizeEdges>(part, ignoreCase: true);
-        }
-        return result;
-    }
-
-    private static byte[] RenderPreview(SKBitmap source, int width, int height)
-    {
-        using var preview = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
-        using var canvas = new SKCanvas(preview);
-        using var checker = new SKPaint { IsAntialias = false };
-        const int tile = 12;
-        for (var y = 0; y < height; y += tile)
-        {
-            for (var x = 0; x < width; x += tile)
+            var position = i * size / GridDivisions;
+            GridCanvas.Children.Add(new Line
             {
-                checker.Color = ((x / tile) + (y / tile)) % 2 == 0
-                    ? new SKColor(225, 225, 225)
-                    : new SKColor(190, 190, 190);
-                canvas.DrawRect(x, y, tile, tile, checker);
-            }
+                X1 = position,
+                Y1 = 0,
+                X2 = position,
+                Y2 = size,
+                Stroke = brush,
+                StrokeThickness = 0.8
+            });
+            GridCanvas.Children.Add(new Line
+            {
+                X1 = 0,
+                Y1 = position,
+                X2 = size,
+                Y2 = position,
+                Stroke = brush,
+                StrokeThickness = 0.8
+            });
         }
+    }
 
+    private void ResetTransform()
+    {
+        _scale = Math.Max(SurfaceWidth / _source.Width, SurfaceHeight / _source.Height);
+        _offsetX = (SurfaceWidth - (_source.Width * _scale)) / 2;
+        _offsetY = (SurfaceHeight - (_source.Height * _scale)) / 2;
+        ApplyTransform();
+    }
+
+    private void ApplyTransform()
+    {
+        SourceImage.Width = _source.Width * _scale;
+        SourceImage.Height = _source.Height * _scale;
+        Canvas.SetLeft(SourceImage, _offsetX);
+        Canvas.SetTop(SourceImage, _offsetY);
+        var outputPx = Math.Clamp((int)Math.Round(CropSize / _scale), 1, MaximumOutputSize);
+        CropSummary.Text = $"输出 {outputPx}×{outputPx} px";
+    }
+
+    private byte[] RenderPreview()
+    {
+        const int maxLongEdge = 2048;
+        var scale = Math.Min(1.0, maxLongEdge / (double)Math.Max(_source.Width, _source.Height));
+        var width = Math.Max(1, (int)Math.Round(_source.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(_source.Height * scale));
+        using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Transparent);
         using var paint = new SKPaint { IsAntialias = true };
         canvas.DrawBitmap(
-            source,
+            _source,
             new SKRect(0, 0, width, height),
             new SKSamplingOptions(SKCubicResampler.Mitchell),
             paint);
-        using var image = SKImage.FromBitmap(preview);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        canvas.Flush();
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 90);
         return data.ToArray();
     }
 
-    [Flags]
-    private enum ResizeEdges
+    private static void SetCanvasRect(FrameworkElement element, double x, double y, double width, double height)
     {
-        None = 0,
-        Left = 1,
-        Top = 2,
-        Right = 4,
-        Bottom = 8
+        Canvas.SetLeft(element, x);
+        Canvas.SetTop(element, y);
+        element.Width = Math.Max(0, width);
+        element.Height = Math.Max(0, height);
     }
 }

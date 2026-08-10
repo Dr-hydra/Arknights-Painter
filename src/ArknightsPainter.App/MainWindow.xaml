@@ -91,9 +91,11 @@
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Button
+                            Grid.Column="0"
                             HorizontalAlignment="Stretch"
                             HorizontalContentAlignment="Center"
                             Click="OpenImage_Click">
@@ -104,6 +106,17 @@
                         </Button>
                         <Button
                             Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="Screenshot_Click"
+                            ToolTipService.ToolTip="屏幕截图">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE722;" />
+                                <TextBlock Text="截图" />
+                            </StackPanel>
+                        </Button>
+                        <Button
+                            Grid.Column="2"
                             Width="40"
                             AutomationProperties.Name="裁切图片"
                             Click="CropImage_Click"

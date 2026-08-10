@@ -22,6 +22,8 @@ public sealed partial class MainWindow : Window
 {
     private bool _loaded;
     private CancellationTokenSource? _adjustmentDebounceCts;
+    private AppWindow _appWindow;
+    private string? _lastTempImage;
 
     public MainWindow()
     {
@@ -33,8 +35,8 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
 
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowNative.GetWindowHandle(this));
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow.Resize(new SizeInt32(1320, 860));
+        _appWindow = AppWindow.GetFromWindowId(windowId);
+        _appWindow.Resize(new SizeInt32(1320, 860));
     }
 
     public MainViewModel ViewModel { get; }
@@ -97,13 +99,65 @@ public sealed partial class MainWindow : Window
         {
             var path = ViewModel.CurrentImagePath
                 ?? throw new InvalidOperationException("请先导入图片。");
-            var dialog = new CropDialog(path, ViewModel.CurrentCrop)
+            var dialog = new CropDialog(path)
             {
                 XamlRoot = RootGrid.XamlRoot
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                await ViewModel.ApplyCropAsync(dialog.CreateCropRect());
+                var png = dialog.GetCroppedPng();
+                await ViewModel.LoadImageAsync(SaveTempImage(png, "crop"));
+            }
+        });
+    }
+
+    private async void Screenshot_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(async () =>
+        {
+            _appWindow.Hide();
+            try
+            {
+                await Task.Delay(250);
+                var capture = ScreenCapture.CaptureVirtualScreen();
+                try
+                {
+                    var overlay = new CaptureOverlayWindow(capture.Bitmap);
+                    try
+                    {
+                        var overlayWindow = overlay.AppWindow;
+                        overlayWindow.MoveAndResize(
+                            new RectInt32(capture.Left, capture.Top, capture.Width, capture.Height));
+                        if (overlayWindow.Presenter is OverlappedPresenter presenter)
+                        {
+                            presenter.IsAlwaysOnTop = true;
+                            presenter.SetBorderAndTitleBar(false, false);
+                            presenter.IsMaximizable = false;
+                            presenter.IsMinimizable = false;
+                            presenter.IsResizable = false;
+                        }
+
+                        overlay.Activate();
+                        var selection = await overlay.WaitForResultAsync();
+                        if (selection is { } rect)
+                        {
+                            var png = ScreenCapture.CropToPng(capture.Bitmap, rect);
+                            await ViewModel.LoadImageAsync(SaveTempImage(png, "screen"));
+                        }
+                    }
+                    finally
+                    {
+                        overlay.Close();
+                    }
+                }
+                finally
+                {
+                    capture.Bitmap.Dispose();
+                }
+            }
+            finally
+            {
+                _appWindow.Show();
             }
         });
     }
@@ -351,4 +405,23 @@ public sealed partial class MainWindow : Window
             (int)Math.Round(y * screenHeight / 1080.0),
             (int)Math.Round(width * screenWidth / 1920.0),
             (int)Math.Round(height * screenHeight / 1080.0));
+
+    private string SaveTempImage(byte[] png, string prefix)
+    {
+        if (_lastTempImage is not null)
+        {
+            try
+            {
+                File.Delete(_lastTempImage);
+            }
+            catch
+            {
+            }
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"ArknightsPainter-{prefix}-{Guid.NewGuid():N}.png");
+        File.WriteAllBytes(path, png);
+        _lastTempImage = path;
+        return path;
+    }
 }
