@@ -122,6 +122,78 @@ public sealed class VisionTests
         }
     }
 
+    [Fact]
+    public void PaletteVision_FindsActualRowsWhenViewportIncludesPaletteHeader()
+    {
+        var viewport = new PixelRect(80, 40, 400, 540);
+        using var bitmap = new SKBitmap(560, 640);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(new SKColor(55, 55, 55));
+        using var paint = new SKPaint { Style = SKPaintStyle.Fill, Color = new SKColor(225, 225, 225) };
+        canvas.DrawRect(105, 75, 105, 24, paint);
+
+        var colors = new[]
+        {
+            new SKColor(20, 30, 40), new SKColor(180, 180, 180),
+            new SKColor(235, 225, 210), new SKColor(255, 255, 255)
+        };
+        const int firstRowTop = 150;
+        const int rowPitch = 75;
+        for (var row = 0; row < 5; row++)
+        {
+            for (var column = 0; column < 4; column++)
+            {
+                paint.Color = colors[column];
+                canvas.DrawRect(90 + (column * 100), firstRowTop + (row * rowPitch), 80, 60, paint);
+            }
+        }
+
+        var screenshot = Encode(bitmap);
+        var swatches = new PaletteVision().ReadVisibleSwatches(screenshot, viewport);
+
+        Assert.Equal(20, swatches.Count);
+        Assert.Equal(firstRowTop + 29, swatches[0].Center.Y);
+        Assert.Equal(firstRowTop + (4 * rowPitch) + 29, swatches[^1].Center.Y);
+        Assert.True(ColorMath.DeltaE2000(swatches[3].Color, new RgbColor(255, 255, 255)) < 1);
+    }
+
+    [Fact]
+    public void PaletteVision_AcceptsNearWhiteSelectionGlow()
+    {
+        var viewport = new PixelRect(20, 20, 400, 100);
+        using var before = new SKBitmap(460, 160);
+        using var after = new SKBitmap(460, 160);
+        DrawWhitePalette(before, viewport, drawGlow: false);
+        DrawWhitePalette(after, viewport, drawGlow: true);
+        var beforePng = Encode(before);
+        var afterPng = Encode(after);
+        var selectedCenter = new PixelPoint(70, 70);
+        var vision = new PaletteVision();
+
+        Assert.False(vision.VerifySelectionGlow(beforePng, viewport, selectedCenter));
+        Assert.True(vision.VerifySelectionGlow(afterPng, viewport, selectedCenter));
+        Assert.True(vision.VerifySelectionGlow(beforePng, afterPng, viewport, selectedCenter));
+    }
+
+    [Fact]
+    public void PaletteVision_DoesNotTreatCyanPaintAsSelectionGlow()
+    {
+        var viewport = new PixelRect(20, 20, 400, 100);
+        using var bitmap = new SKBitmap(460, 160);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(new SKColor(55, 55, 55));
+        using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = new SKColor(145, 216, 230) };
+        for (var column = 0; column < 4; column++)
+        {
+            canvas.DrawRect(30 + (column * 100), 30, 80, 80, fill);
+        }
+
+        Assert.False(new PaletteVision().VerifySelectionGlow(
+            Encode(bitmap),
+            viewport,
+            new PixelPoint(70, 70)));
+    }
+
     private static byte[] CreateScreenshot(bool includeAnchors = true)
     {
         using var bitmap = new SKBitmap(1920, 1080);
@@ -173,6 +245,38 @@ public sealed class VisionTests
             }
         }
 
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static void DrawWhitePalette(SKBitmap bitmap, PixelRect viewport, bool drawGlow)
+    {
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(new SKColor(55, 55, 55));
+        using var fill = new SKPaint { Style = SKPaintStyle.Fill, Color = SKColors.White };
+        for (var column = 0; column < 4; column++)
+        {
+            var centerX = viewport.X + 50 + (column * 100);
+            canvas.DrawRect(centerX - 40, 30, 80, 80, fill);
+        }
+
+        if (!drawGlow)
+        {
+            return;
+        }
+
+        using var glow = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 6,
+            Color = new SKColor(250, 255, 255)
+        };
+        canvas.DrawRect(27, 27, 86, 86, glow);
+    }
+
+    private static byte[] Encode(SKBitmap bitmap)
+    {
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();

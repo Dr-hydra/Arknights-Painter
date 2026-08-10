@@ -59,6 +59,13 @@ public interface IPaletteVision
         double minimumMatchRatio = 0.65);
 
     bool VerifySelectionGlow(byte[] screenshotPng, PixelRect paletteViewport, PixelPoint selectedCenter);
+
+    bool VerifySelectionGlow(
+        byte[] beforeScreenshotPng,
+        byte[] afterScreenshotPng,
+        PixelRect paletteViewport,
+        PixelPoint selectedCenter) =>
+        VerifySelectionGlow(afterScreenshotPng, paletteViewport, selectedCenter);
 }
 
 public interface IPaletteNavigator

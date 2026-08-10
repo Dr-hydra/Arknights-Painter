@@ -19,7 +19,8 @@ public sealed class Win32DesktopClient : IAdbClient, IDisposable
     private const ulong InputSendMessageWithCursorPos = 1UL << 5;
     private const long InvalidControlId = 0;
     private const int StatusSucceeded = 3000;
-    private const int ControllerOptionScreenshotUseRawSize = 3;
+    private const int ControllerOptionScreenshotTargetShortSide = 2;
+    private const int ScreenshotTargetShortSide = 1080;
 
     private readonly object _sync = new();
     private readonly int _processId;
@@ -54,7 +55,7 @@ public sealed class Win32DesktopClient : IAdbClient, IDisposable
 
         try
         {
-            SetRawScreenshotOption();
+            SetScreenshotSizeOption();
             Execute(
                 () => MaaControllerPostConnection(_controller),
                 "连接电脑版窗口");
@@ -322,15 +323,19 @@ public sealed class Win32DesktopClient : IAdbClient, IDisposable
         return int.TryParse(text, out processId) && processId > 0;
     }
 
-    private void SetRawScreenshotOption()
+    private void SetScreenshotSizeOption()
     {
-        var value = Marshal.AllocHGlobal(1);
+        var value = Marshal.AllocHGlobal(sizeof(int));
         try
         {
-            Marshal.WriteByte(value, 1);
-            if (MaaControllerSetOption(_controller, ControllerOptionScreenshotUseRawSize, value, 1) == 0)
+            Marshal.WriteInt32(value, ScreenshotTargetShortSide);
+            if (MaaControllerSetOption(
+                    _controller,
+                    ControllerOptionScreenshotTargetShortSide,
+                    value,
+                    sizeof(int)) == 0)
             {
-                throw new InvalidOperationException("MaaFramework 无法设置原始截图分辨率。");
+                throw new InvalidOperationException("MaaFramework 无法设置截图基准分辨率。");
             }
         }
         finally

@@ -46,6 +46,24 @@ public sealed class PaletteVision : IPaletteVision
         return HasCyanRing(bitmap, selectedCenter, pitch);
     }
 
+    public bool VerifySelectionGlow(
+        byte[] beforeScreenshotPng,
+        byte[] afterScreenshotPng,
+        PixelRect paletteViewport,
+        PixelPoint selectedCenter)
+    {
+        using var before = SKBitmap.Decode(beforeScreenshotPng);
+        using var after = SKBitmap.Decode(afterScreenshotPng);
+        if (before is null || after is null || before.Width != after.Width || before.Height != after.Height)
+        {
+            return false;
+        }
+
+        var pitch = paletteViewport.Width / 4.0;
+        return HasCyanRing(after, selectedCenter, pitch) ||
+               HasNewSelectionRing(before, after, selectedCenter, pitch);
+    }
+
     private static IReadOnlyList<VisibleSwatch> ReadVisibleSwatches(
         SKBitmap bitmap,
         PixelRect viewport,
@@ -57,16 +75,24 @@ public sealed class PaletteVision : IPaletteVision
         }
 
         var pitch = viewport.Width / (double)columns;
-        var rows = Math.Max(0, (int)Math.Floor(viewport.Height / pitch));
+        var rowCenters = FindRowCenters(bitmap, viewport, columns, pitch);
+        if (rowCenters.Count == 0)
+        {
+            var rows = Math.Max(0, (int)Math.Floor(viewport.Height / pitch));
+            rowCenters = Enumerable.Range(0, rows)
+                .Select(row => (int)Math.Round(viewport.Y + ((row + 0.5) * pitch)))
+                .ToArray();
+        }
+
         var sampleRadius = Math.Max(2, (int)Math.Round(pitch * 0.20));
-        var result = new List<VisibleSwatch>(rows * columns);
-        for (var row = 0; row < rows; row++)
+        var result = new List<VisibleSwatch>(rowCenters.Count * columns);
+        for (var row = 0; row < rowCenters.Count; row++)
         {
             for (var column = 0; column < columns; column++)
             {
                 var center = new PixelPoint(
                     (int)Math.Round(viewport.X + ((column + 0.5) * pitch)),
-                    (int)Math.Round(viewport.Y + ((row + 0.5) * pitch)));
+                    rowCenters[row]);
                 var color = MedianColor(bitmap, center, sampleRadius);
                 result.Add(new VisibleSwatch(column, row, center, color, HasCyanRing(bitmap, center, pitch)));
             }
@@ -75,13 +101,73 @@ public sealed class PaletteVision : IPaletteVision
         return result;
     }
 
-    private static RgbColor MedianColor(SKBitmap bitmap, PixelPoint center, int radius)
+    private static IReadOnlyList<int> FindRowCenters(
+        SKBitmap bitmap,
+        PixelRect viewport,
+        int columns,
+        double pitch)
+    {
+        var activeRows = new bool[viewport.Height];
+        var patchRadius = Math.Max(1, (int)Math.Round(pitch * 0.06));
+        for (var offsetY = 0; offsetY < viewport.Height; offsetY++)
+        {
+            var y = viewport.Y + offsetY;
+            var contrastingColumns = 0;
+            for (var column = 0; column < columns; column++)
+            {
+                var cellLeft = viewport.X + (column * pitch);
+                var centerX = (int)Math.Round(cellLeft + (pitch * 0.5));
+                var leftGapX = (int)Math.Round(cellLeft + (pitch * 0.04));
+                var rightGapX = (int)Math.Round(cellLeft + (pitch * 0.96));
+                var center = MedianColor(bitmap, new PixelPoint(centerX, y), patchRadius, 1);
+                var leftGap = MedianColor(bitmap, new PixelPoint(leftGapX, y), 1, 1);
+                var rightGap = MedianColor(bitmap, new PixelPoint(rightGapX, y), 1, 1);
+                if (RgbDistance(center, leftGap) >= 18 || RgbDistance(center, rightGap) >= 18)
+                {
+                    contrastingColumns++;
+                }
+            }
+
+            activeRows[offsetY] = contrastingColumns >= Math.Max(2, columns - 1);
+        }
+
+        var minimumHeight = Math.Max(4, (int)Math.Round(pitch * 0.28));
+        var maximumHeight = Math.Max(minimumHeight, (int)Math.Round(pitch * 1.08));
+        var centers = new List<int>();
+        for (var start = 0; start < activeRows.Length;)
+        {
+            if (!activeRows[start])
+            {
+                start++;
+                continue;
+            }
+
+            var end = start;
+            while (end + 1 < activeRows.Length && activeRows[end + 1])
+            {
+                end++;
+            }
+
+            var height = end - start + 1;
+            if (height >= minimumHeight && height <= maximumHeight)
+            {
+                centers.Add(viewport.Y + ((start + end) / 2));
+            }
+
+            start = end + 1;
+        }
+
+        return centers;
+    }
+
+    private static RgbColor MedianColor(SKBitmap bitmap, PixelPoint center, int radius, int? verticalRadius = null)
     {
         var reds = new List<byte>();
         var greens = new List<byte>();
         var blues = new List<byte>();
         var step = Math.Max(1, radius / 5);
-        for (var y = center.Y - radius; y <= center.Y + radius; y += step)
+        var yRadius = verticalRadius ?? radius;
+        for (var y = center.Y - yRadius; y <= center.Y + yRadius; y += step)
         {
             for (var x = center.X - radius; x <= center.X + radius; x += step)
             {
@@ -108,44 +194,98 @@ public sealed class PaletteVision : IPaletteVision
 
     private static bool HasCyanRing(SKBitmap bitmap, PixelPoint center, double pitch)
     {
-        var minimumRadius = Math.Max(3, (int)Math.Round(pitch * 0.40));
-        var maximumRadius = Math.Max(minimumRadius, (int)Math.Floor(pitch * 0.49));
-        var bestRatio = 0.0;
-        for (var radius = minimumRadius; radius <= maximumRadius; radius++)
+        var hitCount = 0;
+        var sideHits = new int[4];
+        foreach (var sample in EnumerateRing(bitmap, center, pitch))
         {
-            var hits = 0;
-            var samples = 0;
-            for (var offset = -radius; offset <= radius; offset += Math.Max(1, radius / 12))
+            if (!IsSelectionCyan(sample.Color))
             {
-                foreach (var point in new[]
-                         {
-                             new PixelPoint(center.X + offset, center.Y - radius),
-                             new PixelPoint(center.X + offset, center.Y + radius),
-                             new PixelPoint(center.X - radius, center.Y + offset),
-                             new PixelPoint(center.X + radius, center.Y + offset)
-                         })
-                {
-                    if (point.X < 0 || point.Y < 0 || point.X >= bitmap.Width || point.Y >= bitmap.Height)
-                    {
-                        continue;
-                    }
-
-                    samples++;
-                    var pixel = bitmap.GetPixel(point.X, point.Y);
-                    if (IsSelectionCyan(pixel))
-                    {
-                        hits++;
-                    }
-                }
+                continue;
             }
 
-            bestRatio = Math.Max(bestRatio, samples == 0 ? 0 : hits / (double)samples);
+            hitCount++;
+            sideHits[sample.Side]++;
         }
 
-        return bestRatio >= 0.12;
+        var minimumHits = Math.Max(8, (int)Math.Round(pitch * 0.35));
+        return hitCount >= minimumHits && sideHits.Count(hits => hits >= Math.Max(2, minimumHits / 10)) >= 2;
     }
 
-    private static bool IsSelectionCyan(SKColor pixel) =>
-        pixel.Green > 165 && pixel.Blue > 165 && pixel.Red < 165 &&
-        pixel.Green - pixel.Red > 35 && pixel.Blue - pixel.Red > 35;
+    private static bool HasNewSelectionRing(
+        SKBitmap before,
+        SKBitmap after,
+        PixelPoint center,
+        double pitch)
+    {
+        var hitCount = 0;
+        var sideHits = new int[4];
+        foreach (var sample in EnumerateRing(after, center, pitch))
+        {
+            var previous = before.GetPixel(sample.X, sample.Y);
+            if (RgbDistance(previous, sample.Color) < 18 || !IsSelectionHighlight(sample.Color))
+            {
+                continue;
+            }
+
+            hitCount++;
+            sideHits[sample.Side]++;
+        }
+
+        var minimumHits = Math.Max(10, (int)Math.Round(pitch * 0.45));
+        return hitCount >= minimumHits && sideHits.Count(hits => hits >= Math.Max(2, minimumHits / 10)) >= 2;
+    }
+
+    private static IEnumerable<RingSample> EnumerateRing(SKBitmap bitmap, PixelPoint center, double pitch)
+    {
+        var inner = Math.Max(2, (int)Math.Round(pitch * 0.30));
+        var outer = Math.Max(inner + 1, (int)Math.Round(pitch * 0.56));
+        for (var offsetY = -outer; offsetY <= outer; offsetY++)
+        {
+            for (var offsetX = -outer; offsetX <= outer; offsetX++)
+            {
+                var absoluteX = Math.Abs(offsetX);
+                var absoluteY = Math.Abs(offsetY);
+                if (Math.Max(absoluteX, absoluteY) < inner || Math.Max(absoluteX, absoluteY) > outer)
+                {
+                    continue;
+                }
+
+                var x = center.X + offsetX;
+                var y = center.Y + offsetY;
+                if (x < 0 || y < 0 || x >= bitmap.Width || y >= bitmap.Height)
+                {
+                    continue;
+                }
+
+                var side = absoluteX >= absoluteY
+                    ? offsetX < 0 ? 0 : 1
+                    : offsetY < 0 ? 2 : 3;
+                yield return new RingSample(x, y, side, bitmap.GetPixel(x, y));
+            }
+        }
+    }
+
+    private static bool IsSelectionCyan(SKColor pixel)
+    {
+        var minimumCyanLead = pixel.Red >= 220 ? 3 : 8;
+        return pixel.Green >= 225 && pixel.Blue >= 225 &&
+               pixel.Green >= pixel.Red + minimumCyanLead && pixel.Blue >= pixel.Red + minimumCyanLead &&
+               Math.Abs(pixel.Green - pixel.Blue) <= 70;
+    }
+
+    private static bool IsSelectionHighlight(SKColor pixel) =>
+        IsSelectionCyan(pixel) || (pixel.Red >= 220 && pixel.Green >= 235 && pixel.Blue >= 235);
+
+    private static double RgbDistance(RgbColor left, RgbColor right)
+    {
+        var red = left.R - right.R;
+        var green = left.G - right.G;
+        var blue = left.B - right.B;
+        return Math.Sqrt((red * red) + (green * green) + (blue * blue));
+    }
+
+    private static double RgbDistance(SKColor left, SKColor right) =>
+        RgbDistance(new RgbColor(left.Red, left.Green, left.Blue), new RgbColor(right.Red, right.Green, right.Blue));
+
+    private readonly record struct RingSample(int X, int Y, int Side, SKColor Color);
 }

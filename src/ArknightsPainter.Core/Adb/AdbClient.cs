@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using ArknightsPainter.Core.Abstractions;
+using ArknightsPainter.Core.Imaging;
 using ArknightsPainter.Core.Models;
 
 namespace ArknightsPainter.Core.Adb;
@@ -64,18 +65,58 @@ public sealed class AdbClient : IAdbClient
     {
         try
         {
-            return await RunBinaryAsync(
-                ["-s", serial, "exec-out", "screencap", "-p"],
-                cancellationToken,
-                TimeSpan.FromSeconds(12));
+            return await CaptureScreenshotCoreAsync(serial, cancellationToken);
         }
         catch (AdbCommandException) when (serial.Contains(':'))
         {
             await ConnectAsync(serial, cancellationToken);
-            return await RunBinaryAsync(
-                ["-s", serial, "exec-out", "screencap", "-p"],
+            return await CaptureScreenshotCoreAsync(serial, cancellationToken);
+        }
+    }
+
+    private async Task<byte[]> CaptureScreenshotCoreAsync(string serial, CancellationToken cancellationToken)
+    {
+        var direct = await RunBinaryAsync(
+            ["-s", serial, "exec-out", "screencap", "-p"],
+            cancellationToken,
+            TimeSpan.FromSeconds(12));
+        if (ScreenshotImage.TryNormalize(direct, out var normalized))
+        {
+            return normalized;
+        }
+
+        var remotePath = $"/data/local/tmp/arknights-painter-{Guid.NewGuid():N}.png";
+        try
+        {
+            await RunTextAsync(
+                ["-s", serial, "shell", "screencap", "-p", remotePath],
                 cancellationToken,
                 TimeSpan.FromSeconds(12));
+            var fallback = await RunBinaryAsync(
+                ["-s", serial, "exec-out", "cat", remotePath],
+                cancellationToken,
+                TimeSpan.FromSeconds(12));
+            if (ScreenshotImage.TryNormalize(fallback, out normalized))
+            {
+                return normalized;
+            }
+
+            throw new AdbCommandException(
+                "ADB 返回的截图无法解码。",
+                $"direct: {ScreenshotImage.Describe(direct)}; fallback: {ScreenshotImage.Describe(fallback)}");
+        }
+        finally
+        {
+            try
+            {
+                await RunTextAsync(
+                    ["-s", serial, "shell", "rm", "-f", remotePath],
+                    CancellationToken.None,
+                    TimeSpan.FromSeconds(5));
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 

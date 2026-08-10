@@ -138,7 +138,7 @@ public sealed class DrawExecutor(
                         {
                             await WaitForResumeAsync(step.Color.Index);
                             var point = profile.CanvasBounds.GridCenter(cell);
-                            await adb.SwipeAsync(serial, point, point, 80, cancellationToken);
+                            await adb.TapAsync(serial, point, cancellationToken);
                             await Task.Delay(TimeSpan.FromMilliseconds(80), cancellationToken);
                         }
 
@@ -233,40 +233,59 @@ public sealed class DrawExecutor(
         var screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
         using var bitmap = SKBitmap.Decode(screenshot)
             ?? throw new InvalidDataException("无法解码绘制校验截图。");
-        var radius = Math.Max(1, profile.CanvasBounds.Width / (Artwork24.Size * 7));
+        var sampleWidth = profile.CanvasBounds.Width / (double)Artwork24.Size;
+        var sampleHeight = profile.CanvasBounds.Height / (double)Artwork24.Size;
         return step.Cells.Where(cell =>
         {
-            var sampled = SampleCell(bitmap, profile.CanvasBounds.GridCenter(cell), radius);
-            return ColorMath.DeltaE2000(sampled, step.Color.Color) > 12;
+            return !CellMatchesTarget(
+                bitmap,
+                profile.CanvasBounds.GridCenter(cell),
+                sampleWidth,
+                sampleHeight,
+                step.Color.Color);
         }).ToList();
     }
 
-    private static RgbColor SampleCell(SKBitmap bitmap, PixelPoint center, int radius)
+    private static bool CellMatchesTarget(
+        SKBitmap bitmap,
+        PixelPoint center,
+        double cellWidth,
+        double cellHeight,
+        RgbColor target)
     {
-        var reds = new List<byte>();
-        var greens = new List<byte>();
-        var blues = new List<byte>();
-        for (var y = center.Y - radius; y <= center.Y + radius; y += Math.Max(1, radius))
+        const int samplesPerAxis = 7;
+        const double requiredMatchRatio = 0.35;
+        var horizontalRadius = Math.Max(1.0, cellWidth * 0.34);
+        var verticalRadius = Math.Max(1.0, cellHeight * 0.34);
+        var points = new HashSet<(int X, int Y)>();
+        for (var row = 0; row < samplesPerAxis; row++)
         {
-            for (var x = center.X - radius; x <= center.X + radius; x += Math.Max(1, radius))
+            var y = (int)Math.Round(center.Y - verticalRadius +
+                                    ((2 * verticalRadius * row) / (samplesPerAxis - 1)));
+            for (var column = 0; column < samplesPerAxis; column++)
             {
+                var x = (int)Math.Round(center.X - horizontalRadius +
+                                        ((2 * horizontalRadius * column) / (samplesPerAxis - 1)));
                 if (x < 0 || y < 0 || x >= bitmap.Width || y >= bitmap.Height)
                 {
                     continue;
                 }
 
-                var pixel = bitmap.GetPixel(x, y);
-                reds.Add(pixel.Red);
-                greens.Add(pixel.Green);
-                blues.Add(pixel.Blue);
+                points.Add((x, y));
             }
         }
 
-        reds.Sort();
-        greens.Sort();
-        blues.Sort();
-        var middle = reds.Count / 2;
-        return reds.Count == 0 ? default : new RgbColor(reds[middle], greens[middle], blues[middle]);
+        if (points.Count == 0)
+        {
+            return false;
+        }
+
+        var matches = points.Count(point =>
+        {
+            var pixel = bitmap.GetPixel(point.X, point.Y);
+            return ColorMath.DeltaE2000(new RgbColor(pixel.Red, pixel.Green, pixel.Blue), target) <= 12;
+        });
+        return matches / (double)points.Count >= requiredMatchRatio;
     }
 }
 

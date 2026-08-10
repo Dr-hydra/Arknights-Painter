@@ -24,7 +24,7 @@
             <TextBlock
                 FontWeight="SemiBold"
                 Foreground="#D98200"
-                Text="橙色颜料框：只框右侧下半区的色板部分，不要包含上方工具和按钮。"
+                Text="橙色颜料框：框住右侧色块区域，可包含“颜料”标题栏，但不要包含撤销、保存等上方工具。"
                 TextWrapping="Wrap" />
         </StackPanel>
         <Border
@@ -80,7 +80,7 @@
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Top"
                                 Foreground="White"
-                                Text="颜料（仅下半区色板）" />
+                                Text="颜料（色块区域）" />
                             <Border
                                 x:Name="PaletteResizeHandle"
                                 Width="18"

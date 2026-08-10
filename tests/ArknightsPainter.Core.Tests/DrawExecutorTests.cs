@@ -153,6 +153,41 @@ public sealed class DrawExecutorTests
     }
 
     [Fact]
+    public async Task Executor_VerificationIgnoresWatermarkCoveringCellCenters()
+    {
+        var color = new RgbColor(20, 40, 60);
+        var palette = TestPalette.Create(color);
+        var artwork = new Artwork24(Enumerable.Repeat(0, Artwork24.PixelCount));
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(255, 255, 255)) { DrawCenterWatermark = true };
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysValidLocator(),
+            new AlwaysValidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(20, TimeSpan.Zero, 1),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(DrawStage.Completed, progress.Last?.Stage);
+    }
+
+    [Fact]
     public async Task PauseController_BlocksUntilResume()
     {
         var controller = new PauseController();
@@ -180,6 +215,8 @@ public sealed class DrawExecutorTests
         public List<(PixelPoint From, PixelPoint To, int DurationMilliseconds)> Swipes { get; } = [];
 
         public RgbColor SelectedColor { get; set; }
+
+        public bool DrawCenterWatermark { get; init; }
 
         public Task<IReadOnlyList<AdbDevice>> GetDevicesAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<AdbDevice>>([]);
@@ -230,6 +267,21 @@ public sealed class DrawExecutorTests
                     var color = _cells[(row * Artwork24.Size) + column];
                     paint.Color = new SKColor(color.R, color.G, color.B);
                     canvas.DrawRect(board.X + (column * cellSize), board.Y + (row * cellSize), cellSize, cellSize, paint);
+                }
+            }
+
+            if (DrawCenterWatermark)
+            {
+                paint.Color = new SKColor(150, 150, 150);
+                var stripeWidth = cellSize * 0.35f;
+                for (var column = 0; column < Artwork24.Size; column++)
+                {
+                    canvas.DrawRect(
+                        board.X + ((column + 0.5f) * cellSize) - (stripeWidth / 2),
+                        board.Y,
+                        stripeWidth,
+                        board.Height,
+                        paint);
                 }
             }
 

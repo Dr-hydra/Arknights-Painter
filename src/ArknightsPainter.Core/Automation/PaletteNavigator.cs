@@ -98,15 +98,16 @@ public sealed class PaletteNavigator(
 
                 await Task.Delay(140, cancellationToken);
                 var confirmation = await adb.CaptureScreenshotAsync(serial, cancellationToken);
-                if (vision.VerifySelectionGlow(confirmation, profile.PaletteViewport, match.Swatch.Center))
+                if (vision.VerifySelectionGlow(screenshot, confirmation, profile.PaletteViewport, match.Swatch.Center))
                 {
                     return;
                 }
 
+                var beforeRetry = confirmation;
                 await adb.TapAsync(serial, match.Swatch.Center, cancellationToken);
                 await Task.Delay(180, cancellationToken);
                 confirmation = await adb.CaptureScreenshotAsync(serial, cancellationToken);
-                if (vision.VerifySelectionGlow(confirmation, profile.PaletteViewport, match.Swatch.Center))
+                if (vision.VerifySelectionGlow(beforeRetry, confirmation, profile.PaletteViewport, match.Swatch.Center))
                 {
                     return;
                 }
