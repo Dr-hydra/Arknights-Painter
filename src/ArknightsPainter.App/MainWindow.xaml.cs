@@ -3,6 +3,7 @@ using ArknightsPainter.App.Services;
 using ArknightsPainter.App.ViewModels;
 using ArknightsPainter.Core.Models;
 using Microsoft.UI.Windowing;
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -37,6 +38,21 @@ public sealed partial class MainWindow : Window
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowNative.GetWindowHandle(this));
         _appWindow = AppWindow.GetFromWindowId(windowId);
         _appWindow.Resize(new SizeInt32(1320, 860));
+        Closed += (_, _) =>
+        {
+            if (_lastTempImage is not null)
+            {
+                try
+                {
+                    File.Delete(_lastTempImage);
+                    _lastTempImage = null;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"清理临时截图文件失败: {ex.Message}");
+                }
+            }
+        };
     }
 
     public MainViewModel ViewModel { get; }
@@ -118,7 +134,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 await Task.Delay(250);
-                var capture = ScreenCapture.CaptureVirtualScreen();
+                var capture = await Task.Run(ScreenCapture.CaptureMonitorAtCursor);
                 try
                 {
                     var overlay = new CaptureOverlayWindow(capture.Bitmap);
@@ -425,8 +441,9 @@ public sealed partial class MainWindow : Window
             {
                 File.Delete(_lastTempImage);
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.WriteLine($"删除旧临时截图文件失败: {ex.Message}");
             }
         }
 

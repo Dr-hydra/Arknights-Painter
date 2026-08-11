@@ -6,12 +6,31 @@ namespace ArknightsPainter.App.Services;
 
 public static class ScreenCapture
 {
-    public static (SKBitmap Bitmap, int Left, int Top, int Width, int Height) CaptureVirtualScreen()
+    public static (SKBitmap Bitmap, int Left, int Top, int Width, int Height) CaptureMonitorAtCursor()
     {
-        var left = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        var top = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        var width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-        var height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if (!GetCursorPos(out var cursor))
+        {
+            throw new InvalidOperationException("无法获取鼠标位置。");
+        }
+
+        var monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+        if (monitor == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("无法定位显示器。");
+        }
+
+        var monitorInfo = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            throw new InvalidOperationException("无法获取显示器信息。");
+        }
+
+        // 只截取鼠标所在显示器；覆盖窗口铺满该显示器时，
+        // XamlRoot.RasterizationScale 即该显示器的 DPI 缩放，坐标转换一致。
+        var left = monitorInfo.Monitor.Left;
+        var top = monitorInfo.Monitor.Top;
+        var width = monitorInfo.Monitor.Right - monitorInfo.Monitor.Left;
+        var height = monitorInfo.Monitor.Bottom - monitorInfo.Monitor.Top;
         if (width <= 0 || height <= 0)
         {
             throw new InvalidOperationException("无法获取屏幕尺寸。");
@@ -90,8 +109,9 @@ public static class ScreenCapture
     {
         var x = Math.Clamp(rect.X, 0, source.Width);
         var y = Math.Clamp(rect.Y, 0, source.Height);
-        var width = Math.Clamp(rect.Width, 1, source.Width - x);
-        var height = Math.Clamp(rect.Height, 1, source.Height - y);
+        // 贴屏幕边缘时选区可能退化为 0 宽/高，保证至少 1px，避免 Clamp(min>max) 抛异常。
+        var width = Math.Clamp(rect.Width, 1, Math.Max(1, source.Width - x));
+        var height = Math.Clamp(rect.Height, 1, Math.Max(1, source.Height - y));
         using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque);
         var sourcePixels = source.GetPixels();
         var targetPixels = bitmap.GetPixels();
@@ -109,14 +129,17 @@ public static class ScreenCapture
         return data.ToArray();
     }
 
-    private const int SM_XVIRTUALSCREEN = 76;
-    private const int SM_YVIRTUALSCREEN = 77;
-    private const int SM_CXVIRTUALSCREEN = 78;
-    private const int SM_CYVIRTUALSCREEN = 79;
     private const uint SRCCOPY = 0x00CC0020;
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
 
     [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int index);
+    private static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(Point point, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr window);
@@ -160,6 +183,31 @@ public static class ScreenCapture
 
     [DllImport("gdi32.dll")]
     private static extern bool DeleteDC(IntPtr dc);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public MonitorRect Monitor;
+        public MonitorRect Work;
+        public uint Flags;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BitmapInfoHeader

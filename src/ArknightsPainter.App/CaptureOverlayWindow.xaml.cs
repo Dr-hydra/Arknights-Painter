@@ -1,5 +1,6 @@
 using ArknightsPainter.Core.Models;
 using Microsoft.UI.Xaml;
+using System.Diagnostics;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -34,9 +35,18 @@ public sealed partial class CaptureOverlayWindow : Window
 
     private async void OverlayRoot_Loaded(object sender, RoutedEventArgs e)
     {
-        _scale = OverlayRoot.XamlRoot.RasterizationScale;
-        ScreenImage.Source = await ToBitmapImageAsync(_screen);
-        OverlayRoot.Focus(FocusState.Programmatic);
+        try
+        {
+            _scale = OverlayRoot.XamlRoot.RasterizationScale;
+            ScreenImage.Source = await ToBitmapImageAsync(_screen);
+            OverlayRoot.Focus(FocusState.Programmatic);
+        }
+        catch (Exception ex)
+        {
+            // 加载失败也必须结束任务，否则主窗口会一直隐藏。
+            Debug.WriteLine($"截图预览加载失败: {ex.Message}");
+            Cancel();
+        }
     }
 
     private void OverlayRoot_PointerPressed(object sender, PointerRoutedEventArgs e)
@@ -192,12 +202,18 @@ public sealed partial class CaptureOverlayWindow : Window
 
     private static async Task<BitmapImage> ToBitmapImageAsync(SKBitmap bitmap)
     {
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+        // PNG 编码是纯 CPU 计算，放到后台线程避免阻塞 UI。
+        var pngData = await Task.Run(() =>
+        {
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+            return data.ToArray();
+        });
+
         using var stream = new InMemoryRandomAccessStream();
         using (var writer = new DataWriter(stream))
         {
-            writer.WriteBytes(data.ToArray());
+            writer.WriteBytes(pngData);
             await writer.StoreAsync();
             writer.DetachStream();
         }

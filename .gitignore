@@ -9,4 +9,3 @@ artifacts/
 *.nupkg
 *.snupkg
 *.log
-.dotnet-home/
