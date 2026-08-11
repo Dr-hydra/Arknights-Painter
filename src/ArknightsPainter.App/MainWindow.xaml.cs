@@ -3,6 +3,7 @@ using ArknightsPainter.App.Services;
 using ArknightsPainter.App.ViewModels;
 using ArknightsPainter.Core.Models;
 using Microsoft.UI.Windowing;
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -22,6 +23,8 @@ public sealed partial class MainWindow : Window
 {
     private bool _loaded;
     private CancellationTokenSource? _adjustmentDebounceCts;
+    private AppWindow _appWindow;
+    private string? _lastTempImage;
 
     public MainWindow()
     {
@@ -33,8 +36,23 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
 
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(WindowNative.GetWindowHandle(this));
-        var appWindow = AppWindow.GetFromWindowId(windowId);
-        appWindow.Resize(new SizeInt32(1320, 860));
+        _appWindow = AppWindow.GetFromWindowId(windowId);
+        _appWindow.Resize(new SizeInt32(1320, 860));
+        Closed += (_, _) =>
+        {
+            if (_lastTempImage is not null)
+            {
+                try
+                {
+                    File.Delete(_lastTempImage);
+                    _lastTempImage = null;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"清理临时截图文件失败: {ex.Message}");
+                }
+            }
+        };
     }
 
     public MainViewModel ViewModel { get; }
@@ -104,6 +122,71 @@ public sealed partial class MainWindow : Window
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
                 await ViewModel.ApplyCropAsync(dialog.CreateCropRect());
+            }
+        });
+    }
+
+    private async void Screenshot_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(async () =>
+        {
+            _appWindow.Hide();
+            try
+            {
+                await Task.Delay(250);
+                var capture = await Task.Run(ScreenCapture.CaptureMonitorAtCursor);
+                try
+                {
+                    var overlay = new CaptureOverlayWindow(capture.Bitmap);
+                    var overlayClosed = false;
+                    void CloseOverlay()
+                    {
+                        if (!overlayClosed)
+                        {
+                            overlayClosed = true;
+                            overlay.Close();
+                        }
+                    }
+
+                    try
+                    {
+                        var overlayWindow = overlay.AppWindow;
+                        overlayWindow.MoveAndResize(
+                            new RectInt32(capture.Left, capture.Top, capture.Width, capture.Height));
+                        if (overlayWindow.Presenter is OverlappedPresenter presenter)
+                        {
+                            presenter.IsAlwaysOnTop = true;
+                            presenter.SetBorderAndTitleBar(false, false);
+                            presenter.IsMaximizable = false;
+                            presenter.IsMinimizable = false;
+                            presenter.IsResizable = false;
+                        }
+
+                        overlay.Activate();
+                        var selection = await overlay.WaitForResultAsync();
+                        // 先关闭全屏遮罩再处理图片，避免大图加载期间界面长时间无响应。
+                        CloseOverlay();
+                        // 等待预览 PNG 编码结束，避免后台线程仍读取 SKBitmap 时将其释放。
+                        await overlay.PreviewReady;
+                        if (selection is { } rect)
+                        {
+                            var png = await Task.Run(() => ScreenCapture.CropToPng(capture.Bitmap, rect));
+                            await ViewModel.LoadImageAsync(SaveTempImage(png, "screen"));
+                        }
+                    }
+                    finally
+                    {
+                        CloseOverlay();
+                    }
+                }
+                finally
+                {
+                    capture.Bitmap.Dispose();
+                }
+            }
+            finally
+            {
+                _appWindow.Show();
             }
         });
     }
@@ -351,4 +434,24 @@ public sealed partial class MainWindow : Window
             (int)Math.Round(y * screenHeight / 1080.0),
             (int)Math.Round(width * screenWidth / 1920.0),
             (int)Math.Round(height * screenHeight / 1080.0));
+
+    private string SaveTempImage(byte[] png, string prefix)
+    {
+        if (_lastTempImage is not null)
+        {
+            try
+            {
+                File.Delete(_lastTempImage);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"删除旧临时截图文件失败: {ex.Message}");
+            }
+        }
+
+        var path = Path.Combine(Path.GetTempPath(), $"ArknightsPainter-{prefix}-{Guid.NewGuid():N}.png");
+        File.WriteAllBytes(path, png);
+        _lastTempImage = path;
+        return path;
+    }
 }
