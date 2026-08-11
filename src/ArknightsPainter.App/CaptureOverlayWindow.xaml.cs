@@ -33,7 +33,20 @@ public sealed partial class CaptureOverlayWindow : Window
 
     public Task<PixelRect?> WaitForResultAsync() => _completion.Task;
 
-    private async void OverlayRoot_Loaded(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 预览 PNG 编码任务；窗口未加载完成时为已完成的空任务。
+    /// 调用方须在 WaitForResultAsync 返回后再读取，此时窗口已加载、编码任务已启动。
+    /// </summary>
+    public Task PreviewReady => _previewTask ?? Task.CompletedTask;
+
+    private Task? _previewTask;
+
+    private void OverlayRoot_Loaded(object sender, RoutedEventArgs e)
+    {
+        _previewTask = LoadPreviewAsync();
+    }
+
+    private async Task LoadPreviewAsync()
     {
         try
         {

@@ -166,9 +166,11 @@ public sealed partial class MainWindow : Window
                         var selection = await overlay.WaitForResultAsync();
                         // 先关闭全屏遮罩再处理图片，避免大图加载期间界面长时间无响应。
                         CloseOverlay();
+                        // 等待预览 PNG 编码结束，避免后台线程仍读取 SKBitmap 时将其释放。
+                        await overlay.PreviewReady;
                         if (selection is { } rect)
                         {
-                            var png = ScreenCapture.CropToPng(capture.Bitmap, rect);
+                            var png = await Task.Run(() => ScreenCapture.CropToPng(capture.Bitmap, rect));
                             await ViewModel.LoadImageAsync(SaveTempImage(png, "screen"));
                         }
                     }
