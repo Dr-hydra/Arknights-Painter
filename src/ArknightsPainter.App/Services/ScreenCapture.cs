@@ -107,11 +107,12 @@ public static class ScreenCapture
 
     public static byte[] CropToPng(SKBitmap source, PixelRect rect)
     {
-        var x = Math.Clamp(rect.X, 0, source.Width);
-        var y = Math.Clamp(rect.Y, 0, source.Height);
-        // 贴屏幕边缘时选区可能退化为 0 宽/高，保证至少 1px，避免 Clamp(min>max) 抛异常。
-        var width = Math.Clamp(rect.Width, 1, Math.Max(1, source.Width - x));
-        var height = Math.Clamp(rect.Height, 1, Math.Max(1, source.Height - y));
+        // x/y 上限取 Width-1/Height-1：贴屏幕边缘时选区可退化为 1px，
+        // 避免 Clamp(min>max) 抛异常，也防止 sourceOffset 越界读。
+        var x = Math.Clamp(rect.X, 0, Math.Max(0, source.Width - 1));
+        var y = Math.Clamp(rect.Y, 0, Math.Max(0, source.Height - 1));
+        var width = Math.Clamp(rect.Width, 1, source.Width - x);
+        var height = Math.Clamp(rect.Height, 1, source.Height - y);
         using var bitmap = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Opaque);
         var sourcePixels = source.GetPixels();
         var targetPixels = bitmap.GetPixels();
