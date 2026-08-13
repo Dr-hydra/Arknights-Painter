@@ -46,6 +46,7 @@ public sealed class MainViewModel : ObservableObject
     private string _desktopPid;
     private bool _ignoreVisualValidation;
     private bool _experimentalSwipeDrawing;
+    private bool _experimentalCanvasValidation;
     private string _deviceStatus = "正在查找 ADB…";
     private InfoBarSeverity _deviceSeverity = InfoBarSeverity.Informational;
     private string _calibrationStatus = "选择在线设备后进行校准。";
@@ -98,6 +99,7 @@ public sealed class MainViewModel : ObservableObject
         _desktopPid = _settings.DesktopPid;
         _ignoreVisualValidation = _settings.IgnoreVisualValidation;
         _experimentalSwipeDrawing = _settings.ExperimentalSwipeDrawing;
+        _experimentalCanvasValidation = _settings.ExperimentalCanvasValidation;
         if (IsAdbMode)
         {
             TryCreateAdb();
@@ -287,6 +289,19 @@ public sealed class MainViewModel : ObservableObject
             if (SetProperty(ref _experimentalSwipeDrawing, value))
             {
                 _settings.ExperimentalSwipeDrawing = value;
+                _settingsStore.Save(_settings);
+            }
+        }
+    }
+
+    public bool ExperimentalCanvasValidation
+    {
+        get => _experimentalCanvasValidation;
+        set
+        {
+            if (SetProperty(ref _experimentalCanvasValidation, value))
+            {
+                _settings.ExperimentalCanvasValidation = value;
                 _settingsStore.Save(_settings);
             }
         }
@@ -621,14 +636,20 @@ public sealed class MainViewModel : ObservableObject
 
         var ignoreVisualValidation = IgnoreVisualValidation;
         var useSwipeDrawing = ExperimentalSwipeDrawing;
+        var useCanvasValidation = ExperimentalCanvasValidation;
         if (ignoreVisualValidation)
         {
-            AppendLog("警告：已启用强制绘制，将忽略画布、色板、选色发光和落色结果校验。");
+            AppendLog("警告：已关闭标准视觉校验，将跳过画布结构、色板、选色发光和落色结果校验；若启用实验性画布校验，仍会读取画布并跳过已匹配格子。");
         }
 
         if (useSwipeDrawing)
         {
             AppendLog("已启用实验性滑动绘制：连续至少 3 个同色格将按行合并滑动。");
+        }
+
+        if (useCanvasValidation)
+        {
+            AppendLog("已启用实验性画布校验：绘制前将跳过画布中已经匹配的格子。");
         }
 
         var navigator = new PaletteNavigator(_adb!, _paletteVision, ignoreVisualValidation);
@@ -643,7 +664,8 @@ public sealed class MainViewModel : ObservableObject
                 DrawPlan.Create(artwork, _palette),
                 new DrawExecutionOptions(
                     SkipVisualValidation: ignoreVisualValidation,
-                    UseSwipeDrawing: useSwipeDrawing),
+                    UseSwipeDrawing: useSwipeDrawing,
+                    UseCanvasValidation: useCanvasValidation),
                 _pauseController,
                 progress,
                 _drawingCts.Token);

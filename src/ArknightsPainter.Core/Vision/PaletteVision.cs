@@ -84,7 +84,7 @@ public sealed class PaletteVision : IPaletteVision
                 .ToArray();
         }
 
-        var sampleRadius = Math.Max(2, (int)Math.Round(pitch * 0.20));
+        var sampleRadius = Math.Max(2, (int)Math.Round(pitch * 0.16));
         var result = new List<VisibleSwatch>(rowCenters.Count * columns);
         for (var row = 0; row < rowCenters.Count; row++)
         {

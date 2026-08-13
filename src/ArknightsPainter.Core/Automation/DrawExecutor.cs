@@ -24,8 +24,10 @@ public sealed class DrawExecutor(
         CancellationToken cancellationToken = default)
     {
         var completed = 0;
+        var effectivePlan = plan;
         try
         {
+            byte[]? canvasScreenshot = null;
             if (options.SkipVisualValidation)
             {
                 Report(DrawStage.Validating, "已启用强制绘制，跳过视觉校验。");
@@ -33,13 +35,31 @@ public sealed class DrawExecutor(
             else
             {
                 Report(DrawStage.Validating, "正在验证设备画面…");
-                var screenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
-                if (locator.ScoreCanvas(screenshot, profile.CanvasBounds) < 0.25)
+                canvasScreenshot = await adb.CaptureScreenshotAsync(serial, cancellationToken);
+                if (locator.ScoreCanvas(canvasScreenshot, profile.CanvasBounds) < 0.25)
                 {
                     throw new InvalidOperationException("当前画面与已校准的 24×24 画布不匹配，已停止绘制。");
                 }
             }
 
+            if (options.UseCanvasValidation)
+            {
+                Report(DrawStage.Validating, "正在读取当前画布并校验待绘制格子。");
+                canvasScreenshot ??= await adb.CaptureScreenshotAsync(serial, cancellationToken);
+                using var bitmap = SKBitmap.Decode(canvasScreenshot)
+                    ?? throw new InvalidDataException("无法解码画布校验截图。");
+                var before = effectivePlan.TotalCells;
+                effectivePlan = FilterMatchingCells(effectivePlan, bitmap, profile.CanvasBounds);
+                plan = effectivePlan;
+                var skipped = before - effectivePlan.TotalCells;
+                Report(
+                    DrawStage.Validating,
+                    $"画布校验完成：跳过 {skipped} 个已匹配格，剩余 {effectivePlan.TotalCells} 个待绘制格。",
+                    null,
+                    completed);
+            }
+
+            plan = effectivePlan;
             await paletteNavigator.ResetToTopAsync(serial, profile, cancellationToken);
             if (!options.SkipVisualValidation)
             {
@@ -223,6 +243,36 @@ public sealed class DrawExecutor(
         return runs;
     }
 
+    private static DrawPlan FilterMatchingCells(
+        DrawPlan plan,
+        SKBitmap bitmap,
+        PixelRect canvasBounds)
+    {
+        var cellWidth = canvasBounds.Width / (double)Artwork24.Size;
+        var cellHeight = canvasBounds.Height / (double)Artwork24.Size;
+        var steps = plan.Steps
+            .Select(step => new DrawColorStep(
+                step.Color,
+                step.Cells
+                    .Where(cell => !CellMatchesTarget(
+                        bitmap,
+                        canvasBounds.GridCenter(cell),
+                        cellWidth,
+                        cellHeight,
+                        step.Color.Color,
+                        strictRgbMatch: true,
+                        requiredMatchRatio: 0.65))
+                    .ToArray()))
+            .Where(step => step.Cells.Count > 0)
+            .ToArray();
+
+        return new DrawPlan
+        {
+            Artwork = plan.Artwork,
+            Steps = steps
+        };
+    }
+
     private async Task<List<GridPoint>> FindMissingCellsAsync(
         string serial,
         CalibrationProfile profile,
@@ -251,10 +301,11 @@ public sealed class DrawExecutor(
         PixelPoint center,
         double cellWidth,
         double cellHeight,
-        RgbColor target)
+        RgbColor target,
+        bool strictRgbMatch = false,
+        double requiredMatchRatio = 0.35)
     {
         const int samplesPerAxis = 7;
-        const double requiredMatchRatio = 0.35;
         var horizontalRadius = Math.Max(1.0, cellWidth * 0.34);
         var verticalRadius = Math.Max(1.0, cellHeight * 0.34);
         var points = new HashSet<(int X, int Y)>();
@@ -283,6 +334,14 @@ public sealed class DrawExecutor(
         var matches = points.Count(point =>
         {
             var pixel = bitmap.GetPixel(point.X, point.Y);
+            if (strictRgbMatch &&
+                (Math.Abs(pixel.Red - target.R) > 10 ||
+                 Math.Abs(pixel.Green - target.G) > 10 ||
+                 Math.Abs(pixel.Blue - target.B) > 10))
+            {
+                return false;
+            }
+
             return ColorMath.DeltaE2000(new RgbColor(pixel.Red, pixel.Green, pixel.Blue), target) <= 12;
         });
         return matches / (double)points.Count >= requiredMatchRatio;
