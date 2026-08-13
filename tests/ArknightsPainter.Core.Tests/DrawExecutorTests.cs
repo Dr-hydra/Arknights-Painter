@@ -36,7 +36,7 @@ public sealed class DrawExecutorTests
     }
 
     [Fact]
-    public async Task Executor_SkipVisualValidation_DoesNotCaptureVerificationScreenshots()
+    public async Task Executor_SkipVisualValidation_WithCanvasValidation_StillPerformsCanvasPreflight()
     {
         var color = new RgbColor(20, 40, 60);
         var palette = TestPalette.Create(color);
@@ -63,14 +63,132 @@ public sealed class DrawExecutorTests
             profile,
             palette,
             DrawPlan.Create(artwork, palette),
-            new DrawExecutionOptions(20, TimeSpan.Zero, 1, SkipVisualValidation: true),
+            new DrawExecutionOptions(20, TimeSpan.Zero, 1, SkipVisualValidation: true, UseCanvasValidation: true),
             new PauseController(),
             progress);
 
-        Assert.Equal(0, adb.ScreenshotCount);
+        Assert.Equal(1, adb.ScreenshotCount);
+        Assert.Equal(29, adb.BatchCount);
         Assert.Equal(DrawStage.Completed, progress.Last?.Stage);
     }
 
+    [Fact]
+    public async Task Executor_CanvasValidation_SkipsCellsAlreadyMatchingArtwork()
+    {
+        var palette = TestPalette.Create(new RgbColor(0, 0, 0), new RgbColor(255, 255, 255));
+        var indexes = Enumerable.Range(0, Artwork24.PixelCount)
+            .Select(flat => ((flat % Artwork24.Size) + (flat / Artwork24.Size)) % 2)
+            .ToArray();
+        var artwork = new Artwork24(indexes);
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(0, 0, 0));
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysValidLocator(),
+            new AlwaysValidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(
+                TapDelay: TimeSpan.Zero,
+                UseCanvasValidation: true),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(3, adb.ScreenshotCount);
+        Assert.Equal(15, adb.BatchCount);
+        Assert.Equal(Artwork24.PixelCount / 2, progress.Last?.CompletedCells);
+    }
+    [Fact]
+    public async Task Executor_CanvasValidation_DoesNotTreatPureWhiteAsPalePaletteColor()
+    {
+        var palette = TestPalette.Create(new RgbColor(252, 239, 234));
+        var artwork = new Artwork24(Enumerable.Repeat(0, Artwork24.PixelCount));
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(255, 255, 255));
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysValidLocator(),
+            new AlwaysValidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(
+                TapDelay: TimeSpan.Zero,
+                UseCanvasValidation: true),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(3, adb.ScreenshotCount);
+        Assert.Equal(29, adb.BatchCount);
+        Assert.Equal(Artwork24.PixelCount, progress.Last?.CompletedCells);
+    }
+    [Fact]
+    public async Task Executor_CanvasValidation_DoesNotTreatWatermarkAsPaintedColor()
+    {
+        var palette = TestPalette.Create(new RgbColor(150, 150, 150));
+        var artwork = new Artwork24(Enumerable.Repeat(0, Artwork24.PixelCount));
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(255, 255, 255))
+        {
+            DrawCenterWatermark = true
+        };
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysValidLocator(),
+            new AlwaysValidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(
+                TapDelay: TimeSpan.Zero,
+                UseCanvasValidation: true),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(3, adb.ScreenshotCount);
+        Assert.Equal(29, adb.BatchCount);
+        Assert.Equal(Artwork24.PixelCount, progress.Last?.CompletedCells);
+    }
     [Fact]
     public async Task Executor_SwipeMode_MergesEachFullRowIntoOneSwipe()
     {

@@ -282,7 +282,7 @@ public sealed record DrawProgress(
     string Message,
     int? CurrentPaletteIndex = null)
 {
-    public double Fraction => TotalCells == 0 ? 0 : (double)CompletedCells / TotalCells;
+    public double Fraction => TotalCells == 0 ? 1 : (double)CompletedCells / TotalCells;
 }
 
 public sealed record DrawExecutionOptions(
@@ -291,7 +291,8 @@ public sealed record DrawExecutionOptions(
     int VerificationRetries = 1,
     bool SkipVisualValidation = false,
     bool UseSwipeDrawing = false,
-    int SwipeCellDurationMilliseconds = 50)
+    int SwipeCellDurationMilliseconds = 50,
+    bool UseCanvasValidation = false)
 {
     public TimeSpan EffectiveTapDelay => TapDelay ?? TimeSpan.FromMilliseconds(50);
 }

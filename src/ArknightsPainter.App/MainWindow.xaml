@@ -442,6 +442,17 @@
                         Message="同一行连续至少 3 个同色格会合并为直线滑动；孤立格仍逐格点击。建议同时开启绘制安全校验。"
                         Severity="Warning"
                         Title="实验功能" />
+                    <ToggleSwitch
+                        Header="实验性画布校验"
+                        IsOn="{Binding ExperimentalCanvasValidation, Mode=TwoWay}"
+                        OffContent="已关闭：绘制全部格子"
+                        OnContent="已开启：跳过已匹配格子" />
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="{Binding ExperimentalCanvasValidation}"
+                        Message="开始绘制前读取当前画布，并跳过已经与目标图案颜色匹配的格子。建议同时开启绘制安全校验。"
+                        Severity="Warning"
+                        Title="实验功能" />
                     <ProgressBar
                         Maximum="100"
                         Minimum="0"
