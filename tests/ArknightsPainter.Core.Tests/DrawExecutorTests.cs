@@ -384,9 +384,7 @@ public sealed class DrawExecutorTests
                 {
                     var color = _cells[(row * Artwork24.Size) + column];
                     paint.Color = new SKColor(color.R, color.G, color.B);
-                    var left = board.X + (column * cellSize);
-                    var top = board.Y + (row * cellSize);
-                    canvas.DrawRect(new SKRect(left, top, left + cellSize, top + cellSize), paint);
+                    canvas.DrawRect(board.X + (column * cellSize), board.Y + (row * cellSize), cellSize, cellSize, paint);
                 }
             }
 
@@ -396,8 +394,12 @@ public sealed class DrawExecutorTests
                 var stripeWidth = cellSize * 0.35f;
                 for (var column = 0; column < Artwork24.Size; column++)
                 {
-                    var left = board.X + ((column + 0.5f) * cellSize) - (stripeWidth / 2);
-                    canvas.DrawRect(new SKRect(left, board.Y, left + stripeWidth, board.Y + board.Height), paint);
+                    canvas.DrawRect(
+                        board.X + ((column + 0.5f) * cellSize) - (stripeWidth / 2),
+                        board.Y,
+                        stripeWidth,
+                        board.Height,
+                        paint);
                 }
             }
 

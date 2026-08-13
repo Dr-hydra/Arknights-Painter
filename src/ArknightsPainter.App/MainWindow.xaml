@@ -428,7 +428,7 @@
                     <InfoBar
                         IsClosable="False"
                         IsOpen="{Binding IgnoreVisualValidation}"
-                        Message="将跳过标准画布、色板、选色发光和落色结果校验；若启用实验性画布校验，该预检查仍会执行。设备状态、校准坐标和颜料定位仍会保留。"
+                        Message="将跳过画布、色板、选色发光和落色结果校验；设备状态、校准坐标和颜料定位仍会保留。"
                         Severity="Warning"
                         Title="视觉校验已关闭" />
                     <ToggleSwitch

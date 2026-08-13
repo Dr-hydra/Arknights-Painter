@@ -639,7 +639,7 @@ public sealed class MainViewModel : ObservableObject
         var useCanvasValidation = ExperimentalCanvasValidation;
         if (ignoreVisualValidation)
         {
-            AppendLog("警告：已关闭标准视觉校验，将跳过画布结构、色板、选色发光和落色结果校验；若启用实验性画布校验，仍会读取画布并跳过已匹配格子。");
+            AppendLog("警告：已启用强制绘制，将忽略画布、色板、选色发光和落色结果校验。");
         }
 
         if (useSwipeDrawing)
