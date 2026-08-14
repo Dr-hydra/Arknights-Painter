@@ -649,7 +649,7 @@ public sealed class MainViewModel : ObservableObject
 
         if (useCanvasValidation)
         {
-            AppendLog("已启用实验性画布校验：绘制前将跳过画布中已经匹配的格子。");
+            AppendLog("已启用实验性快速校验：绘制前将跳过画布中已经匹配的格子。");
         }
 
         var navigator = new PaletteNavigator(_adb!, _paletteVision, ignoreVisualValidation);

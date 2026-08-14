@@ -428,7 +428,7 @@
                     <InfoBar
                         IsClosable="False"
                         IsOpen="{Binding IgnoreVisualValidation}"
-                        Message="将跳过画布、色板、选色发光和落色结果校验；设备状态、校准坐标和颜料定位仍会保留。"
+                        Message="将跳过画布、色板、选色发光和落色结果校验；实验性快速校验由下方开关独立控制。设备状态、校准坐标和颜料定位仍会保留。"
                         Severity="Warning"
                         Title="视觉校验已关闭" />
                     <ToggleSwitch
@@ -443,14 +443,14 @@
                         Severity="Warning"
                         Title="实验功能" />
                     <ToggleSwitch
-                        Header="实验性画布校验"
+                        Header="实验性快速校验"
                         IsOn="{Binding ExperimentalCanvasValidation, Mode=TwoWay}"
                         OffContent="已关闭：绘制全部格子"
                         OnContent="已开启：跳过已匹配格子" />
                     <InfoBar
                         IsClosable="False"
                         IsOpen="{Binding ExperimentalCanvasValidation}"
-                        Message="开始绘制前读取当前画布，并跳过已经与目标图案颜色匹配的格子。建议同时开启绘制安全校验。"
+                        Message="开始绘制前读取当前画布，跳过已经与目标图案颜色匹配的格子以减少点击。此功能独立于绘制安全校验，建议同时开启两者。"
                         Severity="Warning"
                         Title="实验功能" />
                     <ProgressBar

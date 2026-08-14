@@ -44,7 +44,7 @@ public sealed class DrawExecutor(
 
             if (options.UseCanvasValidation)
             {
-                Report(DrawStage.Validating, "正在读取当前画布并校验待绘制格子。");
+                Report(DrawStage.Validating, "正在快速校验当前画布并筛选待绘制格子。");
                 canvasScreenshot ??= await adb.CaptureScreenshotAsync(serial, cancellationToken);
                 using var bitmap = SKBitmap.Decode(canvasScreenshot)
                     ?? throw new InvalidDataException("无法解码画布校验截图。");
@@ -54,7 +54,7 @@ public sealed class DrawExecutor(
                 var skipped = before - effectivePlan.TotalCells;
                 Report(
                     DrawStage.Validating,
-                    $"画布校验完成：跳过 {skipped} 个已匹配格，剩余 {effectivePlan.TotalCells} 个待绘制格。",
+                    $"快速校验完成：跳过 {skipped} 个已匹配格，剩余 {effectivePlan.TotalCells} 个待绘制格。",
                     null,
                     completed);
             }
