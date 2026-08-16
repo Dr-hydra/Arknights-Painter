@@ -306,6 +306,48 @@ public sealed class DrawExecutorTests
     }
 
     [Fact]
+    public async Task Executor_PaleColorRepair_RepaintsWhiteHolesWhenSafetyValidationIsDisabled()
+    {
+        var paleColor = new RgbColor(234, 231, 223);
+        var palette = TestPalette.Create(paleColor);
+        var artwork = new Artwork24(Enumerable.Repeat(0, Artwork24.PixelCount));
+        var bounds = new PixelRect(0, 0, 240, 240);
+        var profile = new CalibrationProfile(
+            "fake",
+            300,
+            300,
+            bounds,
+            new PixelRect(250, 0, 40, 240),
+            1,
+            DateTimeOffset.UtcNow);
+        var adb = new FakeAdbClient(bounds, new RgbColor(255, 255, 255))
+        {
+            DroppedBatchTapsRemaining = 3
+        };
+        var progress = new InlineProgress();
+        var executor = new DrawExecutor(
+            adb,
+            new AlwaysValidLocator(),
+            new AlwaysValidPaletteVision(),
+            new FakeNavigator(adb));
+
+        await executor.ExecuteAsync(
+            "fake",
+            profile,
+            palette,
+            DrawPlan.Create(artwork, palette),
+            new DrawExecutionOptions(
+                TapDelay: TimeSpan.Zero,
+                SkipVisualValidation: true),
+            new PauseController(),
+            progress);
+
+        Assert.Equal(3, adb.SingleTapCount);
+        Assert.Equal(2, adb.ScreenshotCount);
+        Assert.Equal(DrawStage.Completed, progress.Last?.Stage);
+    }
+
+    [Fact]
     public async Task PauseController_BlocksUntilResume()
     {
         var controller = new PauseController();
@@ -330,6 +372,10 @@ public sealed class DrawExecutorTests
 
         public int ScreenshotCount { get; private set; }
 
+        public int SingleTapCount { get; private set; }
+
+        public int DroppedBatchTapsRemaining { get; set; }
+
         public List<(PixelPoint From, PixelPoint To, int DurationMilliseconds)> Swipes { get; } = [];
 
         public RgbColor SelectedColor { get; set; }
@@ -344,19 +390,35 @@ public sealed class DrawExecutorTests
         public Task<(int Width, int Height)> GetScreenSizeAsync(string serial, CancellationToken cancellationToken = default) =>
             Task.FromResult((300, 300));
 
-        public Task TapAsync(string serial, PixelPoint point, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task TapAsync(string serial, PixelPoint point, CancellationToken cancellationToken = default)
+        {
+            SingleTapCount++;
+            Paint(point);
+            return Task.CompletedTask;
+        }
 
         public Task TapBatchAsync(string serial, IReadOnlyList<PixelPoint> points, TimeSpan delay, CancellationToken cancellationToken = default)
         {
             BatchCount++;
             foreach (var point in points)
             {
-                var column = Math.Clamp((point.X - board.X) * Artwork24.Size / board.Width, 0, Artwork24.Size - 1);
-                var row = Math.Clamp((point.Y - board.Y) * Artwork24.Size / board.Height, 0, Artwork24.Size - 1);
-                _cells[(row * Artwork24.Size) + column] = SelectedColor;
+                if (DroppedBatchTapsRemaining > 0)
+                {
+                    DroppedBatchTapsRemaining--;
+                    continue;
+                }
+
+                Paint(point);
             }
 
             return Task.CompletedTask;
+        }
+
+        private void Paint(PixelPoint point)
+        {
+            var column = Math.Clamp((point.X - board.X) * Artwork24.Size / board.Width, 0, Artwork24.Size - 1);
+            var row = Math.Clamp((point.Y - board.Y) * Artwork24.Size / board.Height, 0, Artwork24.Size - 1);
+            _cells[(row * Artwork24.Size) + column] = SelectedColor;
         }
 
         public Task SwipeAsync(

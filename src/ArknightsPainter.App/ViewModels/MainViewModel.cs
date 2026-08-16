@@ -18,6 +18,8 @@ namespace ArknightsPainter.App.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
+    private const int MosaicLayoutVersion = 2;
+
     private readonly SettingsStore _settingsStore = new();
     private readonly AppSettings _settings;
     private readonly PaletteDefinition _palette;
@@ -29,6 +31,8 @@ public sealed class MainViewModel : ObservableObject
     private CancellationTokenSource? _drawingCts;
     private IAdbClient? _adb;
     private Artwork24? _artwork;
+    private Artwork96? _mosaicArtwork;
+    private bool _isMosaicMode;
     private string? _currentImagePath;
     private ImageCropRect? _currentCrop;
     private string _currentImageName = "尚未选择图片";
@@ -100,6 +104,11 @@ public sealed class MainViewModel : ObservableObject
         _ignoreVisualValidation = _settings.IgnoreVisualValidation;
         _experimentalSwipeDrawing = _settings.ExperimentalSwipeDrawing;
         _experimentalCanvasValidation = _settings.ExperimentalCanvasValidation;
+        _isMosaicMode = string.Equals(_settings.ArtworkMode, "96", StringComparison.OrdinalIgnoreCase);
+        if (_isMosaicMode)
+        {
+            _selectedFitOption = FitOptions.First(option => option.Value == ImageFitMode.Cover);
+        }
         if (IsAdbMode)
         {
             TryCreateAdb();
@@ -218,6 +227,8 @@ public sealed class MainViewModel : ObservableObject
                 UpdateDeviceStatus();
                 UpdateCalibrationStatus();
                 OnPropertyChanged(nameof(CanStart));
+                OnPropertyChanged(nameof(MosaicResumeText));
+                OnPropertyChanged(nameof(CanResetMosaicProgress));
             }
         }
     }
@@ -373,13 +384,39 @@ public sealed class MainViewModel : ObservableObject
         private set => SetProperty(ref _logText, value);
     }
 
-    public Visibility EmptyPreviewVisibility => _artwork is null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility EmptyPreviewVisibility =>
+        (IsMosaicMode ? _mosaicArtwork is null : _artwork is null) ? Visibility.Visible : Visibility.Collapsed;
 
-    public string PreviewSummary => _artwork is null ? string.Empty : $"{_artwork.ColorUsage.Count} 种颜料 · 576 格";
+    public bool IsSingleArtworkMode => !_isMosaicMode;
+
+    public bool IsMosaicMode => _isMosaicMode;
+
+    public Visibility MosaicModeVisibility => IsMosaicMode ? Visibility.Visible : Visibility.Collapsed;
+
+    public string PreviewTitle => IsMosaicMode ? "96×96 分片预览" : "24×24 预览";
+
+    public string ArtworkSizeLabel => IsMosaicMode ? "96×96 · 4×4 分片" : "24×24";
+
+    public string PreviewSummary => IsMosaicMode
+        ? _mosaicArtwork is null ? string.Empty : $"{_mosaicArtwork.ColorUsage.Count} 种颜料 · 9216 格 · 16 分片"
+        : _artwork is null ? string.Empty : $"{_artwork.ColorUsage.Count} 种颜料 · 576 格";
+
+    public string MosaicResumeText
+    {
+        get
+        {
+            var nextTile = GetMosaicResumeIndex(SelectedDevice?.Device.Serial);
+            return nextTile > 0
+                ? $"检测到进度：将从分片 {nextTile + 1}/16 继续。"
+                : "将按游戏槽位顺序从右下到左上绘制并保存 16 张草稿。";
+        }
+    }
+
+    public bool CanResetMosaicProgress => GetMosaicResumeIndex(SelectedDevice?.Device.Serial) > 0 && !_isDrawing;
 
     public bool IsPaletteIncomplete => !_palette.Complete;
 
-    public bool CanStart => !_isDrawing && _artwork is not null &&
+    public bool CanStart => !_isDrawing && (IsMosaicMode ? _mosaicArtwork is not null : _artwork is not null) &&
                             SelectedDevice?.Device.State == AdbDeviceState.Device && GetCalibration() is not null;
 
     public bool CanPause => _isDrawing;
@@ -400,6 +437,36 @@ public sealed class MainViewModel : ObservableObject
     {
         SelectedConnectionMode = ConnectionModeOptions.First(option =>
             string.Equals(option.Value, value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public void SelectArtworkMode(bool mosaic)
+    {
+        if (_isMosaicMode == mosaic)
+        {
+            return;
+        }
+
+        _isMosaicMode = mosaic;
+        if (mosaic && SelectedFitOption.Value == ImageFitMode.Contain)
+        {
+            _selectedFitOption = FitOptions.First(option => option.Value == ImageFitMode.Cover);
+            OnPropertyChanged(nameof(SelectedFitOption));
+        }
+
+        _settings.ArtworkMode = mosaic ? "96" : "24";
+        _settingsStore.Save(_settings);
+        ProgressPercent = 0;
+        ProgressLabel = mosaic ? "0 / 9216" : "0 / 576";
+        OnPropertyChanged(nameof(IsSingleArtworkMode));
+        OnPropertyChanged(nameof(IsMosaicMode));
+        OnPropertyChanged(nameof(MosaicModeVisibility));
+        OnPropertyChanged(nameof(PreviewTitle));
+        OnPropertyChanged(nameof(ArtworkSizeLabel));
+        OnPropertyChanged(nameof(EmptyPreviewVisibility));
+        OnPropertyChanged(nameof(PreviewSummary));
+        OnPropertyChanged(nameof(MosaicResumeText));
+        OnPropertyChanged(nameof(CanResetMosaicProgress));
+        OnPropertyChanged(nameof(CanStart));
     }
 
     public async Task LoadImageAsync(string path)
@@ -448,14 +515,40 @@ public sealed class MainViewModel : ObservableObject
                 Brightness,
                 Contrast,
                 Saturation);
-            _artwork = await _quantizer.ConvertAsync(_currentImagePath, _palette, options, _conversionCts.Token);
-            var preview = _quantizer.RenderPreview(_artwork, _palette);
+            byte[] preview;
+            if (IsMosaicMode)
+            {
+                _mosaicArtwork = await _quantizer.ConvertMosaicAsync(
+                    _currentImagePath,
+                    _palette,
+                    options,
+                    _conversionCts.Token);
+                _artwork = null;
+                preview = _quantizer.RenderPreview(_mosaicArtwork, _palette);
+                ProgressLabel = "0 / 9216";
+            }
+            else
+            {
+                _artwork = await _quantizer.ConvertAsync(
+                    _currentImagePath,
+                    _palette,
+                    options,
+                    _conversionCts.Token);
+                _mosaicArtwork = null;
+                preview = _quantizer.RenderPreview(_artwork, _palette);
+                ProgressLabel = "0 / 576";
+            }
+
             PreviewChanged?.Invoke(this, preview);
             RefreshColorUsage();
             OnPropertyChanged(nameof(EmptyPreviewVisibility));
             OnPropertyChanged(nameof(PreviewSummary));
+            OnPropertyChanged(nameof(MosaicResumeText));
+            OnPropertyChanged(nameof(CanResetMosaicProgress));
             OnPropertyChanged(nameof(CanStart));
-            StatusMessage = "图片已转换，可开始绘制。";
+            StatusMessage = IsMosaicMode
+                ? "图片已转换为 96×96，可开始自动分片绘制。"
+                : "图片已转换，可开始绘制。";
         }
         catch (OperationCanceledException)
         {
@@ -467,6 +560,15 @@ public sealed class MainViewModel : ObservableObject
         Brightness = 0;
         Contrast = 0;
         Saturation = 0;
+    }
+
+    public void ResetMosaicProgress()
+    {
+        _settings.MosaicResume = null;
+        _settingsStore.Save(_settings);
+        OnPropertyChanged(nameof(MosaicResumeText));
+        OnPropertyChanged(nameof(CanResetMosaicProgress));
+        AppendLog("已清除 96×96 分片续画进度，将从第 1 片开始。" );
     }
 
     public async Task RefreshDevicesAsync()
@@ -608,7 +710,10 @@ public sealed class MainViewModel : ObservableObject
     {
         var device = RequireOnlineDevice();
         var profile = GetCalibration() ?? throw new InvalidOperationException("请先完成画面校准。");
-        var artwork = _artwork ?? throw new InvalidOperationException("请先导入图片。");
+        if ((IsMosaicMode && _mosaicArtwork is null) || (!IsMosaicMode && _artwork is null))
+        {
+            throw new InvalidOperationException("请先导入图片。");
+        }
         if (!IsAdbMode && !await EnsureDesktopClientAsync())
         {
             throw new InvalidOperationException("未找到明日方舟电脑版窗口，请先刷新设备列表。");
@@ -639,7 +744,7 @@ public sealed class MainViewModel : ObservableObject
         var useCanvasValidation = ExperimentalCanvasValidation;
         if (ignoreVisualValidation)
         {
-            AppendLog("警告：已启用强制绘制，将忽略画布、色板、选色发光和落色结果校验。");
+            AppendLog("警告：已启用强制绘制，将忽略常规视觉校验；非纯白浅色仍保留防漏检查。");
         }
 
         if (useSwipeDrawing)
@@ -655,20 +760,44 @@ public sealed class MainViewModel : ObservableObject
         var navigator = new PaletteNavigator(_adb!, _paletteVision, ignoreVisualValidation);
         var executor = new DrawExecutor(_adb!, _locator, _paletteVision, navigator);
         var progress = new Progress<DrawProgress>(UpdateProgress);
+        var executionOptions = new DrawExecutionOptions(
+            SkipVisualValidation: ignoreVisualValidation,
+            UseSwipeDrawing: useSwipeDrawing,
+            UseCanvasValidation: useCanvasValidation);
         try
         {
-            await executor.ExecuteAsync(
-                device.Serial,
-                profile,
-                _palette,
-                DrawPlan.Create(artwork, _palette),
-                new DrawExecutionOptions(
-                    SkipVisualValidation: ignoreVisualValidation,
-                    UseSwipeDrawing: useSwipeDrawing,
-                    UseCanvasValidation: useCanvasValidation),
-                _pauseController,
-                progress,
-                _drawingCts.Token);
+            if (IsMosaicMode)
+            {
+                var startTileIndex = GetMosaicResumeIndex(device.Serial);
+                AppendLog(startTileIndex > 0
+                    ? $"继续 96×96 分片任务，将从第 {startTileIndex + 1}/16 片开始。"
+                    : "开始 96×96 分片任务；请确保画册至少有 16 个空位。程序只保存草稿，不会发布。" );
+                var screenNavigator = new MosaicScreenNavigator(_adb!, _locator);
+                var coordinator = new MosaicDrawCoordinator(executor, screenNavigator);
+                await coordinator.ExecuteAsync(
+                    device.Serial,
+                    profile,
+                    _palette,
+                    _mosaicArtwork!,
+                    startTileIndex,
+                    executionOptions,
+                    _pauseController,
+                    nextTile => SaveMosaicProgressAsync(device.Serial, nextTile),
+                    progress,
+                    _drawingCts.Token);
+            }
+            else
+            {
+                await executor.ExecuteAsync(
+                    device.Serial,
+                    profile,
+                    _palette,
+                    DrawPlan.Create(_artwork!, _palette),
+                    executionOptions,
+                    _pauseController,
+                    progress,
+                    _drawingCts.Token);
+            }
         }
         finally
         {
@@ -773,6 +902,39 @@ public sealed class MainViewModel : ObservableObject
             string.Equals(profile.DeviceSerial, device.Serial, StringComparison.OrdinalIgnoreCase));
     }
 
+    private int GetMosaicResumeIndex(string? deviceSerial)
+    {
+        var state = _settings.MosaicResume;
+        if (_mosaicArtwork is null || state is null || string.IsNullOrWhiteSpace(deviceSerial) ||
+            state.LayoutVersion != MosaicLayoutVersion ||
+            state.NextTileIndex is <= 0 or >= Artwork96.TileCount ||
+            !string.Equals(state.DeviceSerial, deviceSerial, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(state.ArtworkSignature, _mosaicArtwork.ComputeSignature(), StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        return state.NextTileIndex;
+    }
+
+    private Task SaveMosaicProgressAsync(string deviceSerial, int nextTileIndex)
+    {
+        _settings.MosaicResume = nextTileIndex >= Artwork96.TileCount
+            ? null
+            : new MosaicResumeState
+            {
+                LayoutVersion = MosaicLayoutVersion,
+                ArtworkSignature = _mosaicArtwork!.ComputeSignature(),
+                DeviceSerial = deviceSerial,
+                NextTileIndex = nextTileIndex,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+        _settingsStore.Save(_settings);
+        OnPropertyChanged(nameof(MosaicResumeText));
+        OnPropertyChanged(nameof(CanResetMosaicProgress));
+        return Task.CompletedTask;
+    }
+
     private void UpdateDeviceStatus()
     {
         if (SelectedDevice is null)
@@ -813,12 +975,13 @@ public sealed class MainViewModel : ObservableObject
     private void RefreshColorUsage()
     {
         ColorUsage.Clear();
-        if (_artwork is null)
+        var usage = IsMosaicMode ? _mosaicArtwork?.ColorUsage : _artwork?.ColorUsage;
+        if (usage is null)
         {
             return;
         }
 
-        foreach (var pair in _artwork.ColorUsage.OrderByDescending(pair => pair.Value))
+        foreach (var pair in usage.OrderByDescending(pair => pair.Value))
         {
             ColorUsage.Add(new ColorUsageItem(PaletteOption.From(_palette[pair.Key]), pair.Value));
         }
@@ -838,6 +1001,7 @@ public sealed class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(CanPause));
         OnPropertyChanged(nameof(CanCancel));
         OnPropertyChanged(nameof(CanCrop));
+        OnPropertyChanged(nameof(CanResetMosaicProgress));
     }
 
     private static bool IsFullCrop(ImageCropRect crop) =>

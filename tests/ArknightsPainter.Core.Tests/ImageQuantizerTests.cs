@@ -276,6 +276,77 @@ public sealed class ImageQuantizerTests : IDisposable
         Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(1, index));
     }
 
+    [Fact]
+    public async Task Mosaic96_IsQuantizedOnceAndSplitsIntoRowMajorTiles()
+    {
+        var colors = new[] { SKColors.Red, SKColors.Green, SKColors.Blue, SKColors.White };
+        using var bitmap = new SKBitmap(Artwork96.Size, Artwork96.Size);
+        for (var tile = 0; tile < Artwork96.TileCount; tile++)
+        {
+            var tileColumn = tile % Artwork96.TilesPerAxis;
+            var tileRow = tile / Artwork96.TilesPerAxis;
+            for (var y = 0; y < Artwork24.Size; y++)
+            {
+                for (var x = 0; x < Artwork24.Size; x++)
+                {
+                    bitmap.SetPixel(
+                        (tileColumn * Artwork24.Size) + x,
+                        (tileRow * Artwork24.Size) + y,
+                        colors[tile % colors.Length]);
+                }
+            }
+        }
+
+        var path = Save("mosaic-96.png", bitmap);
+        var palette = TestPalette.Create(
+            new RgbColor(255, 0, 0),
+            new RgbColor(0, 128, 0),
+            new RgbColor(0, 0, 255),
+            new RgbColor(255, 255, 255));
+        var quantizer = new SkiaImageQuantizer();
+        var options = new ImageConversionOptions(
+            ImageFitMode.Stretch,
+            new RgbColor(255, 255, 255),
+            PixelArtAlgorithm.BeadAverage,
+            DitherMode.None);
+
+        var artwork = await quantizer.ConvertMosaicAsync(path, palette, options);
+        var tiles = artwork.SplitIntoTiles();
+
+        Assert.Equal(Artwork96.PixelCount, artwork.PaletteIndexes.Length);
+        Assert.Equal(Artwork96.TileCount, tiles.Count);
+        for (var tile = 0; tile < tiles.Count; tile++)
+        {
+            Assert.All(tiles[tile].PaletteIndexes.ToArray(), index => Assert.Equal(tile % colors.Length, index));
+        }
+
+        using var preview = SKBitmap.Decode(quantizer.RenderPreview(artwork, palette));
+        Assert.NotNull(preview);
+        Assert.Equal(768, preview.Width);
+        Assert.Equal(768, preview.Height);
+    }
+
+    [Fact]
+    public async Task Mosaic96_CoverFillsTopAndBottomEdgesWithoutBackgroundBars()
+    {
+        var path = CreateSolidImage("mosaic-cover.png", 192, 96, SKColors.Red);
+        var palette = TestPalette.Create(
+            new RgbColor(255, 255, 255),
+            new RgbColor(255, 0, 0));
+        var quantizer = new SkiaImageQuantizer();
+        var options = new ImageConversionOptions(
+            ImageFitMode.Cover,
+            new RgbColor(255, 255, 255),
+            PixelArtAlgorithm.BeadAverage,
+            DitherMode.None);
+
+        var artwork = await quantizer.ConvertMosaicAsync(path, palette, options);
+
+        Assert.All(artwork.PaletteIndexes.ToArray(), index => Assert.Equal(1, index));
+        Assert.Equal(1, artwork[0, 0]);
+        Assert.Equal(1, artwork[Artwork96.Size - 1, Artwork96.Size - 1]);
+    }
+
     public void Dispose()
     {
         Directory.Delete(_temporaryDirectory, true);

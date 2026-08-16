@@ -18,7 +18,24 @@ public sealed class AppSettings
     public bool ExperimentalSwipeDrawing { get; set; }
     public bool ExperimentalCanvasValidation { get; set; }
 
+    public string ArtworkMode { get; set; } = "24";
+
+    public MosaicResumeState? MosaicResume { get; set; }
+
     public List<CalibrationProfile> Calibrations { get; set; } = [];
+}
+
+public sealed class MosaicResumeState
+{
+    public int LayoutVersion { get; set; }
+
+    public string ArtworkSignature { get; set; } = string.Empty;
+
+    public string DeviceSerial { get; set; } = string.Empty;
+
+    public int NextTileIndex { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class SettingsStore

@@ -191,6 +191,65 @@ public sealed class Artwork24
         _paletteIndexes.GroupBy(index => index).ToDictionary(group => group.Key, group => group.Count()));
 }
 
+public sealed class Artwork96
+{
+    public const int Size = 96;
+    public const int TilesPerAxis = 4;
+    public const int TileCount = TilesPerAxis * TilesPerAxis;
+    public const int PixelCount = Size * Size;
+
+    private readonly int[] _paletteIndexes;
+
+    public Artwork96(IEnumerable<int> paletteIndexes)
+    {
+        _paletteIndexes = paletteIndexes.ToArray();
+        if (_paletteIndexes.Length != PixelCount)
+        {
+            throw new ArgumentException($"Artwork must contain exactly {PixelCount} pixels.", nameof(paletteIndexes));
+        }
+    }
+
+    public ReadOnlyMemory<int> PaletteIndexes => _paletteIndexes;
+
+    public int this[int column, int row] => _paletteIndexes[(row * Size) + column];
+
+    public IReadOnlyDictionary<int, int> ColorUsage => new ReadOnlyDictionary<int, int>(
+        _paletteIndexes.GroupBy(index => index).ToDictionary(group => group.Key, group => group.Count()));
+
+    public Artwork24 GetTile(int tileIndex)
+    {
+        if (tileIndex is < 0 or >= TileCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tileIndex));
+        }
+
+        var tileColumn = tileIndex % TilesPerAxis;
+        var tileRow = tileIndex / TilesPerAxis;
+        var indexes = new int[Artwork24.PixelCount];
+        for (var row = 0; row < Artwork24.Size; row++)
+        {
+            for (var column = 0; column < Artwork24.Size; column++)
+            {
+                indexes[(row * Artwork24.Size) + column] = this[
+                    (tileColumn * Artwork24.Size) + column,
+                    (tileRow * Artwork24.Size) + row];
+            }
+        }
+
+        return new Artwork24(indexes);
+    }
+
+    public IReadOnlyList<Artwork24> SplitIntoTiles() =>
+        Enumerable.Range(0, TileCount).Select(GetTile).ToArray();
+
+    public string ComputeSignature()
+    {
+        var bytes = new byte[_paletteIndexes.Length * sizeof(int)];
+        Buffer.BlockCopy(_paletteIndexes, 0, bytes, 0, bytes.Length);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    }
+}
+
 public sealed record ImageConversionOptions(
     ImageFitMode FitMode,
     RgbColor Background,

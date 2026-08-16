@@ -47,7 +47,7 @@
                     Grid.Column="2"
                     VerticalAlignment="Center"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="24×24" />
+                    Text="{Binding ArtworkSizeLabel}" />
             </Grid>
             <StackPanel
                 HorizontalAlignment="Right"
@@ -88,6 +88,25 @@
             <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="14">
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="图像" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ToggleButton
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="Artwork24Mode_Click"
+                            Content="24×24 单画"
+                            IsChecked="{Binding IsSingleArtworkMode, Mode=OneWay}" />
+                        <ToggleButton
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Click="Artwork96Mode_Click"
+                            Content="96×96 分片"
+                            IsChecked="{Binding IsMosaicMode, Mode=OneWay}" />
+                    </Grid>
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -264,7 +283,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid>
-                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="24×24 预览" />
+                    <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="{Binding PreviewTitle}" />
                     <TextBlock
                         HorizontalAlignment="Right"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -291,14 +310,21 @@
                         </Grid>
                     </Border>
                 </Viewbox>
-                <InfoBar
-                    Grid.Row="2"
-                    Margin="0,12,0,0"
-                    IsClosable="False"
-                    IsOpen="{Binding IsPaletteIncomplete}"
-                    Message="当前内置的是截图可见色板；连接模拟器后运行 PaletteCapture 可生成完整色板。"
-                    Severity="Warning"
-                    Title="色板待完整采集" />
+                <StackPanel Grid.Row="2" Margin="0,12,0,0" Spacing="8">
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="True"
+                        Message="预览中的粗线是 16 张子画边界；为适配游戏反向槽位，按右下到左上的顺序保存。"
+                        Severity="Informational"
+                        Title="4×4 自动分片"
+                        Visibility="{Binding MosaicModeVisibility}" />
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="{Binding IsPaletteIncomplete}"
+                        Message="当前内置的是截图可见色板；连接模拟器后运行 PaletteCapture 可生成完整色板。"
+                        Severity="Warning"
+                        Title="色板待完整采集" />
+                </StackPanel>
             </Grid>
 
             <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
@@ -420,6 +446,19 @@
 
                     <Border Height="1" Margin="0,4" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
                     <TextBlock Style="{StaticResource SectionHeaderStyle}" Text="绘制" />
+                    <StackPanel Spacing="8" Visibility="{Binding MosaicModeVisibility}">
+                        <InfoBar
+                            IsClosable="False"
+                            IsOpen="True"
+                            Message="{Binding MosaicResumeText}"
+                            Severity="Informational"
+                            Title="96×96 自动分片" />
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            Click="ResetMosaicProgress_Click"
+                            Content="清除续画进度"
+                            IsEnabled="{Binding CanResetMosaicProgress}" />
+                    </StackPanel>
                     <ToggleSwitch
                         Header="绘制安全校验"
                         IsOn="{Binding VisualValidationEnabled, Mode=TwoWay}"
@@ -428,7 +467,7 @@
                     <InfoBar
                         IsClosable="False"
                         IsOpen="{Binding IgnoreVisualValidation}"
-                        Message="将跳过画布、色板、选色发光和落色结果校验；实验性快速校验由下方开关独立控制。设备状态、校准坐标和颜料定位仍会保留。"
+                        Message="将跳过画布、色板、选色发光和常规落色校验；为避免白底漏点，非纯白浅色仍会执行防漏检查。实验性快速校验由下方开关独立控制。"
                         Severity="Warning"
                         Title="视觉校验已关闭" />
                     <ToggleSwitch

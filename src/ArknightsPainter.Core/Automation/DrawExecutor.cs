@@ -148,11 +148,20 @@ public sealed class DrawExecutor(
                     }
                 }
 
-                if (!options.SkipVisualValidation)
+                var usePaleColorRepair = IsPaleNonWhite(step.Color.Color);
+                if (!options.SkipVisualValidation || usePaleColorRepair)
                 {
-                    Report(DrawStage.Verifying, $"正在校验 {step.Color.Name}", step.Color.Index);
+                    Report(
+                        DrawStage.Verifying,
+                        options.SkipVisualValidation
+                            ? $"正在进行浅色防漏检查 {step.Color.Name}"
+                            : $"正在校验 {step.Color.Name}",
+                        step.Color.Index);
                     var missing = await FindMissingCellsAsync(serial, profile, step, cancellationToken);
-                    for (var retry = 0; missing.Count > 0 && retry < options.VerificationRetries; retry++)
+                    var retries = usePaleColorRepair
+                        ? Math.Max(2, options.VerificationRetries)
+                        : options.VerificationRetries;
+                    for (var retry = 0; missing.Count > 0 && retry < retries; retry++)
                     {
                         foreach (var cell in missing)
                         {
@@ -331,9 +340,15 @@ public sealed class DrawExecutor(
             return false;
         }
 
+        var targetIsPureWhite = IsPureWhite(target);
         var matches = points.Count(point =>
         {
             var pixel = bitmap.GetPixel(point.X, point.Y);
+            if (!targetIsPureWhite && pixel.Red >= 248 && pixel.Green >= 248 && pixel.Blue >= 248)
+            {
+                return false;
+            }
+
             if (strictRgbMatch &&
                 (Math.Abs(pixel.Red - target.R) > 10 ||
                  Math.Abs(pixel.Green - target.G) > 10 ||
@@ -346,6 +361,15 @@ public sealed class DrawExecutor(
         });
         return matches / (double)points.Count >= requiredMatchRatio;
     }
+
+    private static bool IsPaleNonWhite(RgbColor color)
+    {
+        var distanceFromWhite = ColorMath.DeltaE2000(color, new RgbColor(255, 255, 255));
+        return distanceFromWhite is > 0.5 and <= 12;
+    }
+
+    private static bool IsPureWhite(RgbColor color) =>
+        ColorMath.DeltaE2000(color, new RgbColor(255, 255, 255)) <= 0.5;
 }
 
 public sealed class DrawingVerificationException(PaletteColor color, IReadOnlyList<GridPoint> missingCells)

@@ -220,6 +220,29 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void Artwork24Mode_Click(object sender, RoutedEventArgs e)
+    {
+        ((ToggleButton)sender).IsChecked = true;
+        ViewModel.SelectArtworkMode(mosaic: false);
+        if (_loaded)
+        {
+            await RunUiActionAsync(ViewModel.ReconvertAsync);
+        }
+    }
+
+    private async void Artwork96Mode_Click(object sender, RoutedEventArgs e)
+    {
+        ((ToggleButton)sender).IsChecked = true;
+        ViewModel.SelectArtworkMode(mosaic: true);
+        if (_loaded)
+        {
+            await RunUiActionAsync(ViewModel.ReconvertAsync);
+        }
+    }
+
+    private void ResetMosaicProgress_Click(object sender, RoutedEventArgs e) =>
+        ViewModel.ResetMosaicProgress();
+
     private async void ImageAdjustment_Changed(object sender, RangeBaseValueChangedEventArgs e)
     {
         if (!_loaded)

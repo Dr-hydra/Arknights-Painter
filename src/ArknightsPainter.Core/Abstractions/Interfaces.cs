@@ -11,6 +11,14 @@ public interface IImageQuantizer
         CancellationToken cancellationToken = default);
 
     byte[] RenderPreview(Artwork24 artwork, PaletteDefinition palette, int outputSize = 576, bool showGrid = true);
+
+    Task<Artwork96> ConvertMosaicAsync(
+        string imagePath,
+        PaletteDefinition palette,
+        ImageConversionOptions options,
+        CancellationToken cancellationToken = default);
+
+    byte[] RenderPreview(Artwork96 artwork, PaletteDefinition palette, int outputSize = 768, bool showGrid = true);
 }
 
 public interface IAdbClient
@@ -89,5 +97,18 @@ public interface IDrawExecutor
         DrawExecutionOptions options,
         PauseController pauseController,
         IProgress<DrawProgress>? progress = null,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IMosaicScreenNavigator
+{
+    Task EnsureEditorAsync(
+        string serial,
+        CalibrationProfile profile,
+        CancellationToken cancellationToken = default);
+
+    Task SaveAsync(
+        string serial,
+        CalibrationProfile profile,
         CancellationToken cancellationToken = default);
 }

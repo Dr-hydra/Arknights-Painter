@@ -19,7 +19,27 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
             throw new FileNotFoundException("Image file was not found.", imagePath);
         }
 
-        return Task.Run(() => Convert(imagePath, palette, options, cancellationToken), cancellationToken);
+        return Task.Run(
+            () => new Artwork24(Convert(imagePath, palette, options, Artwork24.Size, cancellationToken)),
+            cancellationToken);
+    }
+
+    public Task<Artwork96> ConvertMosaicAsync(
+        string imagePath,
+        PaletteDefinition palette,
+        ImageConversionOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(imagePath);
+        ArgumentNullException.ThrowIfNull(palette);
+        if (!File.Exists(imagePath))
+        {
+            throw new FileNotFoundException("Image file was not found.", imagePath);
+        }
+
+        return Task.Run(
+            () => new Artwork96(Convert(imagePath, palette, options, Artwork96.Size, cancellationToken)),
+            cancellationToken);
     }
 
     public byte[] RenderPreview(
@@ -27,8 +47,23 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         PaletteDefinition palette,
         int outputSize = 576,
         bool showGrid = true)
+        => RenderPreview(Artwork24.Size, (column, row) => artwork[column, row], palette, outputSize, showGrid);
+
+    public byte[] RenderPreview(
+        Artwork96 artwork,
+        PaletteDefinition palette,
+        int outputSize = 768,
+        bool showGrid = true)
+        => RenderPreview(Artwork96.Size, (column, row) => artwork[column, row], palette, outputSize, showGrid);
+
+    private static byte[] RenderPreview(
+        int artworkSize,
+        Func<int, int, int> getPaletteIndex,
+        PaletteDefinition palette,
+        int outputSize,
+        bool showGrid)
     {
-        if (outputSize < Artwork24.Size)
+        if (outputSize < artworkSize)
         {
             throw new ArgumentOutOfRangeException(nameof(outputSize));
         }
@@ -36,13 +71,13 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         using var bitmap = new SKBitmap(outputSize, outputSize, SKColorType.Bgra8888, SKAlphaType.Premul);
         using var canvas = new SKCanvas(bitmap);
         canvas.Clear(SKColors.White);
-        var cell = (float)outputSize / Artwork24.Size;
+        var cell = (float)outputSize / artworkSize;
         using var fill = new SKPaint { Style = SKPaintStyle.Fill, IsAntialias = false };
-        for (var row = 0; row < Artwork24.Size; row++)
+        for (var row = 0; row < artworkSize; row++)
         {
-            for (var column = 0; column < Artwork24.Size; column++)
+            for (var column = 0; column < artworkSize; column++)
             {
-                var color = palette[artwork[column, row]].Color;
+                var color = palette[getPaletteIndex(column, row)].Color;
                 fill.Color = new SKColor(color.R, color.G, color.B);
                 canvas.DrawRect(column * cell, row * cell, cell + 0.5f, cell + 0.5f, fill);
             }
@@ -57,11 +92,28 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
                 Color = new SKColor(0, 0, 0, 45),
                 IsAntialias = false
             };
-            for (var i = 0; i <= Artwork24.Size; i++)
+            for (var i = 0; i <= artworkSize; i++)
             {
                 var position = i * cell;
                 canvas.DrawLine(position, 0, position, outputSize, grid);
                 canvas.DrawLine(0, position, outputSize, position, grid);
+            }
+
+            if (artworkSize == Artwork96.Size)
+            {
+                using var tileGrid = new SKPaint
+                {
+                    Style = SKPaintStyle.Stroke,
+                    StrokeWidth = 3,
+                    Color = new SKColor(0, 0, 0, 150),
+                    IsAntialias = false
+                };
+                for (var tile = 0; tile <= Artwork96.TilesPerAxis; tile++)
+                {
+                    var position = tile * Artwork24.Size * cell;
+                    canvas.DrawLine(position, 0, position, outputSize, tileGrid);
+                    canvas.DrawLine(0, position, outputSize, position, tileGrid);
+                }
             }
         }
 
@@ -70,14 +122,15 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         return data.ToArray();
     }
 
-    private static Artwork24 Convert(
+    private static int[] Convert(
         string imagePath,
         PaletteDefinition palette,
         ImageConversionOptions options,
+        int artworkSize,
         CancellationToken cancellationToken)
     {
         using var source = SkiaImageLoader.LoadOriented(imagePath);
-        using var sampled = Sample(source, options, cancellationToken);
+        using var sampled = Sample(source, options, artworkSize, cancellationToken);
         ApplyColorAdjustments(sampled, options, cancellationToken);
         var indexes = options.Dither switch
         {
@@ -89,31 +142,32 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
             DitherMode.Bayer4x4 => QuantizeBayer4x4(sampled, palette, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(options), "Unknown dithering mode.")
         };
-        return new Artwork24(indexes);
+        return indexes;
     }
 
     private static SKBitmap Sample(
         SKBitmap source,
         ImageConversionOptions options,
+        int artworkSize,
         CancellationToken cancellationToken)
     {
         ValidateCrop(options);
         return options.Algorithm switch
         {
-            PixelArtAlgorithm.Perceptual => ComposePerceptual(source, options),
-            PixelArtAlgorithm.BeadAverage => ComposeBeadGrid(source, options, dominant: false, cancellationToken),
-            PixelArtAlgorithm.BeadDominant => ComposeBeadGrid(source, options, dominant: true, cancellationToken),
+            PixelArtAlgorithm.Perceptual => ComposePerceptual(source, options, artworkSize),
+            PixelArtAlgorithm.BeadAverage => ComposeBeadGrid(source, options, artworkSize, dominant: false, cancellationToken),
+            PixelArtAlgorithm.BeadDominant => ComposeBeadGrid(source, options, artworkSize, dominant: true, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(options), "Unknown pixel-art algorithm.")
         };
     }
 
-    private static SKBitmap ComposePerceptual(SKBitmap source, ImageConversionOptions options)
+    private static SKBitmap ComposePerceptual(SKBitmap source, ImageConversionOptions options, int artworkSize)
     {
         var sourceRect = CreateSourceRect(source, options);
-        var output = new SKBitmap(Artwork24.Size, Artwork24.Size, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var output = new SKBitmap(artworkSize, artworkSize, SKColorType.Bgra8888, SKAlphaType.Premul);
         using var canvas = new SKCanvas(output);
         canvas.Clear(new SKColor(options.Background.R, options.Background.G, options.Background.B));
-        var target = CreateTargetRect(sourceRect, options.FitMode);
+        var target = CreateTargetRect(sourceRect, options.FitMode, artworkSize);
 
         using var paint = new SKPaint { IsAntialias = true };
         canvas.DrawBitmap(source, sourceRect, target, new SKSamplingOptions(SKCubicResampler.Mitchell), paint);
@@ -124,17 +178,18 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
     private static SKBitmap ComposeBeadGrid(
         SKBitmap source,
         ImageConversionOptions options,
+        int artworkSize,
         bool dominant,
         CancellationToken cancellationToken)
     {
         var sourceRect = CreateSourceRect(source, options);
-        var target = CreateTargetRect(sourceRect, options.FitMode);
-        var output = new SKBitmap(Artwork24.Size, Artwork24.Size, SKColorType.Bgra8888, SKAlphaType.Opaque);
+        var target = CreateTargetRect(sourceRect, options.FitMode, artworkSize);
+        var output = new SKBitmap(artworkSize, artworkSize, SKColorType.Bgra8888, SKAlphaType.Opaque);
 
-        for (var y = 0; y < Artwork24.Size; y++)
+        for (var y = 0; y < artworkSize; y++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            for (var x = 0; x < Artwork24.Size; x++)
+            for (var x = 0; x < artworkSize; x++)
             {
                 var color = dominant
                     ? SampleDominant(source, sourceRect, target, x, y, options.Background)
@@ -286,25 +341,25 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
             (float)(crop.Bottom * source.Height));
     }
 
-    private static SKRect CreateTargetRect(SKRect sourceRect, ImageFitMode fitMode)
+    private static SKRect CreateTargetRect(SKRect sourceRect, ImageFitMode fitMode, int artworkSize)
     {
         if (fitMode == ImageFitMode.Stretch)
         {
-            return new SKRect(0, 0, Artwork24.Size, Artwork24.Size);
+            return new SKRect(0, 0, artworkSize, artworkSize);
         }
 
-        var scaleX = Artwork24.Size / sourceRect.Width;
-        var scaleY = Artwork24.Size / sourceRect.Height;
+        var scaleX = artworkSize / sourceRect.Width;
+        var scaleY = artworkSize / sourceRect.Height;
         var scale = fitMode == ImageFitMode.Contain
             ? Math.Min(scaleX, scaleY)
             : Math.Max(scaleX, scaleY);
         var width = sourceRect.Width * scale;
         var height = sourceRect.Height * scale;
         return new SKRect(
-            (Artwork24.Size - width) / 2,
-            (Artwork24.Size - height) / 2,
-            (Artwork24.Size + width) / 2,
-            (Artwork24.Size + height) / 2);
+            (artworkSize - width) / 2,
+            (artworkSize - height) / 2,
+            (artworkSize + width) / 2,
+            (artworkSize + height) / 2);
     }
 
     private static void ValidateCrop(ImageConversionOptions options)
@@ -369,14 +424,15 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         PaletteDefinition palette,
         CancellationToken cancellationToken)
     {
-        var result = new int[Artwork24.PixelCount];
-        for (var row = 0; row < Artwork24.Size; row++)
+        var size = bitmap.Width;
+        var result = new int[size * size];
+        for (var row = 0; row < size; row++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            for (var column = 0; column < Artwork24.Size; column++)
+            for (var column = 0; column < size; column++)
             {
                 var pixel = bitmap.GetPixel(column, row);
-                result[(row * Artwork24.Size) + column] = ColorMath.FindNearest(
+                result[(row * size) + column] = ColorMath.FindNearest(
                     new RgbColor(pixel.Red, pixel.Green, pixel.Blue), palette.Colors).Index;
             }
         }
@@ -390,7 +446,7 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
         DitherMode mode,
         CancellationToken cancellationToken)
     {
-        const int size = Artwork24.Size;
+        var size = bitmap.Width;
         var channels = new double[size, size, 3];
         for (var y = 0; y < size; y++)
         {
@@ -403,7 +459,7 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
             }
         }
 
-        var result = new int[Artwork24.PixelCount];
+        var result = new int[size * size];
         for (var y = 0; y < size; y++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -455,11 +511,12 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
             { 3, 11, 1, 9 },
             { 15, 7, 13, 5 }
         };
-        var result = new int[Artwork24.PixelCount];
-        for (var y = 0; y < Artwork24.Size; y++)
+        var size = bitmap.Width;
+        var result = new int[size * size];
+        for (var y = 0; y < size; y++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            for (var x = 0; x < Artwork24.Size; x++)
+            for (var x = 0; x < size; x++)
             {
                 var pixel = bitmap.GetPixel(x, y);
                 var offset = (((matrix[y % 4, x % 4] + 0.5) / 16.0) - 0.5) * 48;
@@ -467,7 +524,7 @@ public sealed class SkiaImageQuantizer : IImageQuantizer
                     ClampByte(pixel.Red + offset),
                     ClampByte(pixel.Green + offset),
                     ClampByte(pixel.Blue + offset));
-                result[(y * Artwork24.Size) + x] = ColorMath.FindNearest(adjusted, palette.Colors).Index;
+                result[(y * size) + x] = ColorMath.FindNearest(adjusted, palette.Colors).Index;
             }
         }
 
